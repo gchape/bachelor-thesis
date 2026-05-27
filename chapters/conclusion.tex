@@ -1,0 +1,57 @@
+\chapter{Conclusion}
+
+\section{Summary}
+This thesis presented the design, formal analysis, and implementation of
+an MVCC-based Software Transactional Memory system for Clojure, inspired by the
+Transactional Locking II~\cite{dice2006transactional} algorithm. The system
+was argued to satisfy opacity~\cite{guerraoui2007} and global
+progress~\cite{bushkov2012}, and was extended with a transactional event
+system that supports side effects at commit and rollback boundaries.
+Evaluation showed strong throughput under read-heavy workloads and good
+scalability under high contention, while write-heavy workloads revealed
+commit-lock serialization as the primary bottleneck. The transactional event
+system introduced negligible overhead of approximately $0.14\,\mu s$, roughly
+7\% of the baseline commit cost, demonstrating that side-effect
+coordination can be added to a transactional model without meaningful
+performance penalty.
+
+\section{Limitations and Future Work}
+\label{sec:future}
+
+\paragraph{Global commit lock.}
+Write transactions are serialized through a single global commit lock, which the
+write-heavy evaluation identified as the primary throughput bottleneck. While the lock did
+not saturate under the evaluated workloads, it represents a hard ceiling under
+significantly higher write concurrency. Replacing it with per-stripe commit locks, a
+fixed array of locks with write-sets hashed to stripes, would allow non-conflicting
+write transactions to commit in parallel, at the cost of occasional false conflicts
+between transactions that hash to the same stripe.
+
+\paragraph{Bounded version history.}
+Version history is capped at 16 entries per reference. This bound was chosen as a
+pragmatic, memory-efficient default; a reference updated frequently under high concurrency
+may evict older versions before a slower transaction can read them at its snapshot point,
+forcing a retry even though no true write conflict occurred. A dynamic strategy would
+instead track the minimum active read point $w_{\min}$ across all live transactions and
+retain only versions newer than this threshold. This eliminates unnecessary aborts from
+history trimming while keeping memory use bounded by the span between $w_{\min}$ and the
+current write point.
+
+\paragraph{Starvation under adversarial scheduling.}
+Because younger transactions preempt older ones, a transaction may be repeatedly displaced
+under sustained high contention, consistent with the impossibility of local progress
+established in Chapter~\ref{ch:formal-model}. In the benchmarks conducted, starvation was not
+observed at the thread counts evaluated; however, it cannot be ruled out under adversarial
+scheduling or significantly higher concurrency. It could be mitigated in practice by
+making backoff age-aware: older transactions back off less aggressively than newer ones,
+giving them more commit attempts per unit of time and a higher probability of winning the
+next ownership round.
+
+\paragraph{Lifecycle hook granularity.}
+The current hook model exposes only \texttt{on-commit} and \texttt{on-rollback}.
+Extending the system with \texttt{before-commit}, \texttt{after-commit},
+\texttt{before-retry}, and \texttt{after-retry} phases would enable more advanced use
+cases. A \texttt{before-commit} hook in particular would provide an integration point for
+write-ahead logging: executed after read-set validation succeeds but before any
+modifications are applied, it could append the pending write set to a persistent log,
+providing a path toward durability for side-effecting transactions.

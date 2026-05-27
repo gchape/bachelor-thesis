@@ -1,0 +1,137 @@
+\chapter{Introduction}
+
+\section{Background}
+\label{sec:intro}
+
+In computer science, concurrency makes it far more difficult to reason about
+program state. In a sequential execution model, events occur in a well-defined order,
+and each operation observes a consistent state produced by its predecessor, allowing
+developers to reason about program execution step by step. In contrast, in concurrent systems,
+multiple sequences of operations may execute simultaneously, and their interactions can
+lead to non-deterministic and often unexpected outcomes.
+
+Consider a simple example in which two threads concurrently increment a shared counter:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cc}
+\toprule
+\textbf{Thread 1} & \textbf{Thread 2} \\
+\midrule
+\texttt{ctr++} & \texttt{ctr++} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent At a high level, each increment appears atomic. On modern hardware, however,
+it is typically implemented as a sequence of three steps: reading the value from memory,
+incrementing it, and writing it back:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cc}
+\toprule
+\textbf{Thread 1} & \textbf{Thread 2} \\
+\midrule
+$r_1 \gets \mathit{ctr}$       & $r_2 \gets \mathit{ctr}$       \\
+$r_1 \gets r_1 + 1$            & $r_2 \gets r_2 + 1$            \\
+$\mathit{ctr} \gets r_1$       & $\mathit{ctr} \gets r_2$       \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Since each thread performs three operations, the total number of possible
+interleavings is $\displaystyle \binom{6}{3} = 20$, where only two are \emph{serializable}.
+
+Correctness in concurrent systems therefore depends on controlling how shared
+state is accessed and modified. Traditional synchronization mechanisms achieve
+this through mutual exclusion, ensuring that only one thread may access a
+critical section at a time. Locks and monitors are among the most widely used
+approaches for enforcing such guarantees.
+
+While lock-based synchronization preserves correctness, reasoning about
+fine-grained synchronization is notoriously difficult in practice. Locks
+must be manually acquired and released, and as systems grow in complexity,
+guarding state-mutating operations and preserving invariants in the
+presence of exceptions becomes increasingly error-prone. Exceptions in
+particular can cause locks to be held indefinitely, leading to deadlocks
+and resource leakage.
+
+Lomet~\cite{lomet1977} proposed that programmers should be able to declaratively
+express the intent to atomically execute a block of code, shifting
+synchronization responsibility from the programmer to the underlying system.
+Software Transactional Memory~(STM) is one realization of this idea: a
+sequence of memory operations is treated as a transaction that either completes
+entirely or has no effect.
+
+Beyond atomicity, STM offers an important semantic advantage
+over lock-based mechanisms: \emph{composability}. Consider a bank transfer:
+withdraw from one account and deposit into another. Both operations can be made
+individually atomic, but composing them is not straightforward:
+
+\begin{lstlisting}[language=Lisp, caption={Non-composable transfer}]
+(defn transfer [from to amount]
+  (withdraw from amount)   ; atomic
+  (deposit to amount))     ; atomic, but not together
+\end{lstlisting}
+
+\noindent Between the two operations, another thread may observe an
+inconsistent intermediate state. With STM, both operations are composed in a
+transaction and committed together atomically:
+
+\begin{lstlisting}[language=Lisp, caption={Composable transfer with STM}]
+(defn transfer [from to amount]
+  (dosync
+    (withdraw from amount)
+    (deposit to amount)))
+\end{lstlisting}
+
+\noindent If any conflict occurs mid-execution, the entire transaction is
+retried and no intermediate state is ever visible to other threads. Larger
+atomic operations can be constructed naturally from smaller ones, without
+the programmer reasoning about lock ordering or failure scenarios.
+
+\section{Problem Statement}
+The Clojure STM documentation states that because transactions are retried on conflict, side-effecting operations are explicitly disallowed:
+\begin{quote}
+I/O and other activities with side-effects should be avoided in
+transactions, since transactions will be retried~\cite{clojure_refs}.
+\end{quote}
+However, there are use cases where side-effects are inherent to the
+problem, such as logging state updates, sending notifications, or
+communicating with external systems. In these cases, this restriction
+leaves no safe mechanism to coordinate such operations with transaction
+outcomes.
+
+The natural approach would be to extend Clojure's existing STM with
+side-effect-aware transaction lifecycle hooks, but extending the native STM
+is not straightforward. The core functionality is defined in
+\texttt{LockingTransaction.java} within the \texttt{clojure.lang} package,
+and the implementation methods \texttt{doGet}, \texttt{doSet}, and \texttt{run} 
+carry package-private visibility, making them inaccessible outside the package.
+Prior work addressed this by forking the Clojure runtime~\cite{jensen2016} and
+adding extensions under the same package, but that couples the solution to
+a language runtime and increases maintenance burden.
+
+The result is a gap in Clojure's STM model: no mechanism exists for safely coordinating 
+side effects with transaction outcomes.
+
+\section{Project Approach}
+This project designs and implements an STM system in Clojure from the
+ground up, without modifying the host runtime. The implementation draws
+on the TL2 algorithm~\cite{dice2006transactional} as a foundation.
+
+The core transactional model is based on MVCC,
+where transactions execute speculatively and conflicts are resolved at
+commit time. This model is then extended with a transaction lifecycle
+event system, allowing side-effecting operations to be registered within a transaction
+and dispatched only after the outcome is determined. The result is exposed through a 
+declarative public API that integrates naturally with idiomatic Clojure code.
+
+The proposed approach is guided by three objectives:
+\begin{enumerate}
+  \item an MVCC-based STM system in Clojure, inspired by TL2
+  \item an extension of the transactional model with commit and rollback
+        lifecycle hooks
+  \item a declarative public API
+\end{enumerate}
