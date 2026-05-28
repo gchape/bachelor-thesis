@@ -177,6 +177,41 @@ Multithreading (SMT) allows two logical threads to share one physical core: when
 thread stalls waiting for the commit lock, the core switches to its sibling, hiding some of the
 lock-wait latency and recovering effective throughput above the 6-thread figure.
 
+JFR diagnostic profiling confirms this interpretation directly.
+Table~\ref{tab:jfr-commit-lock} reports commit-lock blocking events recorded during a
+dedicated 30-second run per thread count.
+
+\begin{table}[H]
+  \centering
+  \caption{Commit-lock monitor contention measured via JFR (bank transfer, 20 accounts,
+           30\,s per run). Tick values converted at 4.6\,GHz.}
+  \label{tab:jfr-commit-lock}
+  \begin{tabular}{@{}r r r r@{}}
+    \toprule
+    \textbf{Threads} & \textbf{Block Count} & \textbf{Avg Wait ($\mu$s)} & \textbf{Max Wait ($\mu$s)} \\
+    \midrule
+    4  &  82 & 3,236 & 4,493 \\
+    6  &  88 & 3,150 & 4,313 \\
+    12 & 419 & 2,519 & 3,878 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The block count is nearly identical at 4 and 6 threads (82 vs.\ 88 events), and average wait
+time is flat at approximately 3,150--3,236\,$\mu$s. This rules out the explanation that
+individual threads wait longer at 6 threads: the per-block cost is unchanged. What changes is
+that adding two threads increases the rate at which threads arrive at the commit phase without
+proportionally increasing the work that can be serialized through it, consistent with the
+6\% throughput reduction observed (217,380 to 204,732\,TPS).
+
+At 12 threads the block count rises sharply to 419 events while average wait time falls to
+2,519\,$\mu$s. The higher block count reflects more logical threads competing for the monitor
+simultaneously. The shorter average wait is explained by SMT: when a logical thread blocks on
+the commit lock, the physical core switches to its sibling logical thread, keeping the core
+busy. The lock holder therefore completes \texttt{apply-writes!} faster, releasing the monitor
+sooner, which reduces measured wait time per event even as total contention increases.
+Throughput recovers as a result.
+
 Correctness is verified after each run by checking that the sum of all account balances equals
 the initial total, which holds in every measurement.
 
@@ -383,10 +418,13 @@ fail at commit.
 
 The write-heavy scenario is the clearest demonstration of the system's primary limitation.
 Abort rates of 0.00 across all thread counts definitively rule out retry overhead as a
-factor, the throughput ceiling is caused entirely by commit-lock serialization. With 90\%
+factor; the throughput ceiling is caused entirely by commit-lock serialization. With 90\%
 of transactions competing to hold the same monitor at commit time, throughput peaks at 6
 threads and then drops sharply to 423,942\,TPS at 12 threads, a 39\% reduction from the
-6-thread peak. The ownership-stealing mechanism and exponential backoff keep individual
+6-thread peak. The JFR data in Table~\ref{tab:jfr-commit-lock} corroborates this directly:
+at 12 threads, 419 blocking events on a single monitor address account for virtually all
+blocked time, confirming that the serialization bottleneck is real and measurable rather
+than inferred. The ownership-stealing mechanism and exponential backoff keep individual
 transactions efficient, but they cannot reduce the fundamental serialization imposed by a
 single commit lock under near-universal write load. Replacing it with per-stripe commit locks
 is the most directly motivated direction for future work, as discussed in

@@ -10,8 +10,8 @@ system that supports side effects at commit and rollback boundaries.
 Evaluation showed strong throughput under read-heavy workloads and good
 scalability under high contention, while write-heavy workloads revealed
 commit-lock serialization as the primary bottleneck. The transactional event
-system introduced negligible overhead of approximately $0.14\,\mu s$, roughly
-7\% of the baseline commit cost, demonstrating that side-effect
+system introduced negligible overhead of approximately $0.16\,\mu s$, roughly
+10\% of the baseline commit cost, demonstrating that side-effect
 coordination can be added to a transactional model without meaningful
 performance penalty.
 
