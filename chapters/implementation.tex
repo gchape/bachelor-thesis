@@ -13,7 +13,7 @@ object carries its own versioned lock, and per-stripe (PS), where a fixed
 lock array is shared across locations via
 hashing~\cite{dice2006transactional}. PO delivers better performance but
 requires embedding lock words into object headers, which is not possible on
-the JVM without runtime modification. PS avoids this but introduces false
+the JVM. PS avoids this but introduces false
 conflicts between unrelated locations that hash to the same stripe. The
 proposed implementation uses a dedicated \texttt{java.lang.Object} monitor
 per reference for ownership acquisition at write time. Commit
@@ -37,42 +37,42 @@ Section~\ref{sec:mvcc-design}.
 The system is implemented in the \texttt{opusdb.atomic.stm} namespace. Four
 global data structures coordinate all transactional activity:
 
-\begin{itemize}
-    \item \texttt{write-point} -- a globally shared \texttt{AtomicLong}
+\begin{description}
+    \item[\texttt{write-point}] A globally shared \texttt{AtomicLong}
           acting as the version clock. It is incremented atomically on every
           successful write-transaction commit, establishing a total order over
           all committed states.
-    \item \texttt{tx-counter} -- a monotonically increasing
+    \item[\texttt{tx-counter}] A monotonically increasing
           \texttt{AtomicLong} that assigns unique identifiers to transactions.
           The strict ordering of these identifiers forms the basis of the
           age-based ownership protocol.
-    \item \texttt{active-tx} -- a \texttt{ConcurrentHashMap} mapping live
+    \item[\texttt{active-tx}] A \texttt{ConcurrentHashMap} mapping live
           transaction IDs to their transaction maps, used by
           \texttt{try-acquire!} to locate and abort the owner of a conflicting
           reference.
-    \item \texttt{commit-lock} -- a single global \texttt{Object} monitor
+    \item[\texttt{commit-lock}] A single global \texttt{Object} monitor
           that serializes the commit phase of all write transactions, ensuring
           that read-set validation and write application are atomic with
           respect to one another.
-\end{itemize}
+\end{description}
 
 Four constants govern system behaviour:
 
-\begin{itemize}
-    \item \texttt{max-history} (16) -- the maximum number of committed
+\begin{description}
+    \item[\texttt{max-history} (16)] The maximum number of committed
           versions retained per reference. Older entries are discarded on
           commit, bounding per-reference memory use.
-    \item \texttt{max-retries} (96) -- the maximum number of times a
+    \item[\texttt{max-retries} (96)] The maximum number of times a
           transaction is retried before the system throws unconditionally,
-          preventing livelock under pathological contention. The value of 96 was 
-          chosen conservatively: at the maximum backoff of 32 ms per retry, 96
-          retries represent over 3 seconds of cumulative delay, which is long
+          preventing livelock. The value of 96 was
+          chosen conservatively: at the maximum backoff of 32\,ms per retry, 96
+          retries represent about 2-3 seconds of cumulative delay, which is long
           enough that a transaction still failing at that point is almost certainly in livelock rather than waiting on a genuinely slow but progressing system.
-    \item \texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32) --
-          the lower and upper bounds of the exponential backoff delay applied
+    \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] The
+          lower and upper bounds of the exponential backoff delay applied
           after the fourth retry. Backoff is capped at 32\,ms to keep
           worst-case latency bounded.
-\end{itemize}
+\end{description}
 
 The current transaction is bound to the dynamic thread-local variable
 \texttt{*tx*}. A value of \texttt{nil} indicates that the calling thread is
@@ -118,9 +118,6 @@ oldest entry:
     history))
 \end{lstlisting}
 
-Realizing the result into a fresh vector severs references to discarded
-entries, allowing the garbage collector to reclaim them.
-
 \section{Transaction Lifecycle}
 
 \subsection{Creation}
@@ -145,12 +142,16 @@ and registers the transaction in \texttt{active-tx}:
     tx))
 \end{lstlisting}
 
-Both the read-set and write-set use \texttt{IdentityHashMap}, which keys
-entries by object identity rather than value equality. Transactional references
+Both the read-set and write-set use \texttt{IdentityHashMap}, which uses reference-equality 
+rather than value-equality to compare keys. 
+
+Transactional references
 are \texttt{atom} objects whose identity, their memory address, is stable
 for their lifetime, while their contents change with every commit. Using
 identity as the key ensures that two distinct references holding equal values
-are never confused. The read-set additionally caches the \texttt{:write-point}
+are never confused. 
+
+Additionally, the read-set caches the \texttt{:write-point}
 observed at read time alongside the value, because the reference's own
 \texttt{:write-point} field will be updated by subsequent commits; the cached
 entry records what the state was at the moment of the snapshot, which is what
@@ -187,9 +188,9 @@ read-set validation later compares against.
           (:value snapshot))))))
 \end{lstlisting}
 
-The write-set is consulted first to provide read-your-writes semantics: a
+The write-set is checked first to provide read-your-writes semantics: a
 transaction that has buffered a write to a reference must observe its own
-buffered value on subsequent reads. The read-set is consulted second to return
+buffered value on subsequent reads. The read-set is checked second to return
 the previously snapshotted value without re-scanning the history. If neither
 set contains the reference, \texttt{find-entry} performs a newest-first scan of
 the version history, returning the latest entry whose write point does not
@@ -207,13 +208,13 @@ acquiring ownership of the target reference via \texttt{try-acquire!}:
 (defn ref-set [target-ref new-val]
   (when-not *tx*
     (throw (IllegalStateException. "ref-set outside transaction")))
-
+    
   (let [tx *tx*]
     (check-active! tx)
-
+    
     (when-not (try-acquire! target-ref tx)
       (abort))
-
+      
     (.put ^IdentityHashMap (:write-set tx) target-ref new-val)
     new-val))
 \end{lstlisting}
@@ -222,9 +223,9 @@ acquiring ownership of the target reference via \texttt{try-acquire!}:
 
 \texttt{commit!} finalizes a transaction. Read-only transactions (empty write
 set) bypass the global commit lock entirely, committing immediately since their
-snapshot is guaranteed consistent by the version history. Write transactions
+snapshot is guaranteed to be consistent by the version history. Write transactions
 enter the commit lock, perform a double-checked status validation to detect
-ownership theft that occurred while waiting, validate the read set, and then
+ownership theft that could have occurred while waiting, validate the read set, and then
 apply writes:
 
 \begin{lstlisting}[language=Lisp, numbers=none,
@@ -285,7 +286,7 @@ with bounds $S_{\min} = \tfrac{3}{4}b(n)$, $S_{\max} = \tfrac{5}{4}b(n)$, and ba
   b(n) = \min\!\left(32,\; 2^{\min(n-4,\,6)}\right)\,\text{ms}
 \end{equation}
 giving $b(5) = 2\,\text{ms}$, $b(8) = 16\,\text{ms}$, and $b(n) = 32\,\text{ms}$ for all
-$n \geq 10$. The $\pm 25\%$ jitter prevents the thundering-herd problem by spreading
+$n \geq 9$. The $\pm 25\%$ jitter prevents the thundering-herd problem by spreading
 retry attempts across time; the $32\,\text{ms}$ cap ensures worst-case per-retry latency
 remains bounded regardless of contention level.
 
@@ -295,9 +296,11 @@ remains bounded regardless of contention level.
 (defn- next-tx [current]
   (tx/rollback! (:id current))
   (.remove active-tx (:id current))
+  
   (let [retries (:retry-count current)]
     (when (>= retries max-retries)
       (throw (ex-info "STM exceeded max retries" {:retries retries})))
+      
     (when (> retries 4)
       (let [base   (min max-sleep-ms
                         (bit-shift-left base-sleep-ms
@@ -486,7 +489,7 @@ Four cases arise. If the reference has no owner, the claiming transaction
 acquires it immediately. If the claimer already owns the reference, the call is
 idempotent. If the current owner has a lower identifier (is older), the claimer
 steals ownership by marking the owner \textsc{Aborted} in
-\texttt{active-tx} and installing itself as the new owner. If the current owner
+\texttt{active-tx} and making itself as the new owner. If the current owner
 has a higher identifier (is younger), the claimer returns \texttt{false} and
 aborts, allowing the younger owner to proceed.
 
@@ -564,7 +567,7 @@ re-execution:
 \end{lstlisting}
 
 The underlying implementation maintains two \texttt{ConcurrentHashMap} instances,
-one for commit handlers and one for rollback handlers, keyed by transaction ID:
+one for commit handlers and one for rollback handlers, indexed by transaction ID:
 
 \begin{lstlisting}[language=Lisp, numbers=none,
   caption={Core event tables and handler accumulation.}]
@@ -596,14 +599,14 @@ The \texttt{compute} method appends handlers without explicit locking, since
     (doseq [f fns] (f))))
 \end{lstlisting}
 
-The exactly-once guarantee for commit handlers rests on two properties working
+The exactly-once guarantee for commit handlers depends on two properties working
 together. First, \texttt{.remove} is atomic: it extracts and clears the handler
 list in a single operation, so if two threads were somehow racing to dispatch the
 same transaction, only one would receive a non-nil result; the other would
 receive \texttt{nil}, and \texttt{when-let} would not execute the dispatch body
 at all. Second, each retry attempt receives a fresh transaction identifier from
 the monotonically increasing \texttt{tx-counter}. Handlers registered during a
-failed attempt are keyed under that attempt's ID; when \texttt{rollback!} fires,
+failed attempt are indexed by that attempt's ID; when \texttt{rollback!} fires,
 \texttt{.remove} extracts and dispatches those rollback handlers and they are
 gone. The next attempt registers its own handlers under a new ID entirely. There
 is therefore no path by which a handler registered in attempt $k$ can be

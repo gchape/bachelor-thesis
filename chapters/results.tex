@@ -115,7 +115,11 @@ age-based ownership protocol resolves conflicts efficiently before they escalate
     };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput and scaling: High Contention (single shared ref)}
+  \caption{Throughput under maximal conflict, where all threads compete for a single shared
+  reference. Despite every concurrent pair being in conflict, the ownership-stealing protocol
+  ensures at least one transaction commits per contention round, producing modest but consistent
+  scaling from 304K to 428K TPS. The near-zero abort rate confirms that conflicts are resolved
+  eagerly at write time rather than escalating to full retries.}
   \label{fig:throughput-high-contention}
 \end{figure}
 
@@ -154,7 +158,10 @@ commit overhead with memory latency across sibling logical threads.
     };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput and scaling: Low Contention (isolated refs)}
+  \caption{Throughput when each thread operates on a fully isolated reference, measuring the
+  baseline cost of the commit path with no conflict overhead. Monotonic scaling through 12
+  threads reflects the JVM's ability to overlap commit latency with memory access across SMT
+  sibling threads, with no contention-related work present to act as a ceiling.}
   \label{fig:throughput-low-contention}
 \end{figure}
 
@@ -198,7 +205,7 @@ dedicated 30-second run per thread count.
 \end{table}
 
 The block count is nearly identical at 4 and 6 threads (82 vs.\ 88 events), and average wait
-time is flat at approximately 3,150--3,236\,$\mu$s. This rules out the explanation that
+time is flat at approximately 3,150-3,236\,$\mu$s. This rules out the explanation that
 individual threads wait longer at 6 threads: the per-block cost is unchanged. What changes is
 that adding two threads increases the rate at which threads arrive at the commit phase without
 proportionally increasing the work that can be serialized through it, consistent with the
@@ -235,11 +242,16 @@ the initial total, which holds in every measurement.
     };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput and scaling: Bank Transfer (20 accounts)}
+  \caption{Throughput under a realistic mixed workload with 20 accounts shared across threads.
+  The non-monotonic result, a dip at 6 threads before recovery at 12, is explained by
+  commit-lock serialization: additional threads increase the rate at which transactions arrive
+  at the commit phase without increasing the throughput of the single monitor serializing them.
+  SMT at 12 threads partially hides lock-wait latency by keeping the physical core busy.}
   \label{fig:throughput-bank-transfer}
 \end{figure}
 
 \subsection{Read-Heavy and Write-Heavy Workloads}
+\label{sec:read-write-heavy}
 
 These two scenarios use a mixed workload over 10 shared references.
 
@@ -287,7 +299,11 @@ discussed in Section~\ref{sec:bottlenecks}.
     };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput and scaling: Read-Heavy Mix (10\% writes)}
+  \caption{Throughput with 90\% read-only transactions, the scenario that most directly
+  demonstrates the MVCC advantage. Read-only transactions bypass the commit lock entirely,
+  accessing a consistent snapshot through the version history. Near-linear scaling through
+  12 threads and the highest absolute throughput across all scenarios (2.29M~TPS) confirm
+  that readers and writers do not interfere under this design.}
   \label{fig:throughput-read-heavy}
 \end{figure}
 
@@ -311,7 +327,11 @@ discussed in Section~\ref{sec:bottlenecks}.
     };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput and scaling: Write-Heavy Mix (90\% writes)}
+  \caption{Throughput when 90\% of transactions write, saturating the global commit lock.
+  The peak at 6 threads followed by a 39\% drop at 12 threads isolates commit-lock
+  serialization as the primary scalability ceiling; measured abort rates of 0.00 at all
+  thread counts rule out retry overhead as a contributing factor. This scenario directly
+  motivates the per-stripe commit lock discussed in Section~\ref{sec:future}.}
   \label{fig:throughput-write-heavy}
 \end{figure}
 
@@ -334,7 +354,7 @@ Twelve futures all target the same two accounts simultaneously. Each future exec
 iteration under this sustained concurrent load, including any backoff time incurred before the
 commit succeeds. Latency rises to \textbf{243.33\,$\mu$s} ($\pm$\,26.50), a roughly
 $136\times$ increase over the baseline. The standard deviation is contained relative to the
-mean, a coefficient of variation of approximately 11\% --- indicating that the exponential
+mean, a coefficient of variation of approximately 11\%, indicating that the exponential
 backoff with $\pm$25\% jitter is effectively spreading retrying threads across time.
 
 \paragraph{Scenarios (iii) and (iv): \texttt{on-commit} hook overhead.}
@@ -396,10 +416,12 @@ than measurement noise.
 The results confirm that the MVCC design is well-suited to read-heavy workloads. Read-only
 transactions access a consistent snapshot without acquiring any lock and without interfering
 with concurrent writers, producing the best absolute throughput across all scenarios at
-2,288,055\,TPS at 12 threads and near-linear scaling through the oversubscription regime.
-The $\approx$1.79\,$\mu$s baseline latency is fast for an implementation written entirely at
-the application level in a high-level JVM language, with no modifications to the Clojure
-runtime.
+2,288,055\,TPS at 12 threads and near-linear scaling under oversubscription.
+The $\approx$1.79\,$\mu$s baseline latency reflects the cost of the full commit
+path: snapshot acquisition, ownership acquisition, read-set validation, write
+application, and hook dispatch, implemented without any modifications to the
+Clojure runtime. This provides a concrete reference point for interpreting the
+contention-induced latency reported in scenario~(ii).
 
 At 0.16\,$\mu$s, \texttt{on-commit} hook dispatch adds roughly 10\% to the baseline commit
 cost and is negligible relative to the contention-induced latency observed in the benchmarks.
@@ -421,11 +443,11 @@ Abort rates of 0.00 across all thread counts definitively rule out retry overhea
 factor; the throughput ceiling is caused entirely by commit-lock serialization. With 90\%
 of transactions competing to hold the same monitor at commit time, throughput peaks at 6
 threads and then drops sharply to 423,942\,TPS at 12 threads, a 39\% reduction from the
-6-thread peak. The JFR data in Table~\ref{tab:jfr-commit-lock} corroborates this directly:
+6-thread peak. The JFR data in Table~\ref{tab:jfr-commit-lock} measures this directly:
 at 12 threads, 419 blocking events on a single monitor address account for virtually all
 blocked time, confirming that the serialization bottleneck is real and measurable rather
 than inferred. The ownership-stealing mechanism and exponential backoff keep individual
 transactions efficient, but they cannot reduce the fundamental serialization imposed by a
-single commit lock under near-universal write load. Replacing it with per-stripe commit locks
+single commit lock under heavy write load. Replacing it with per-stripe commit locks
 is the most directly motivated direction for future work, as discussed in
 Section~\ref{sec:future}.

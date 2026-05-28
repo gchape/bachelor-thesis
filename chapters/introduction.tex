@@ -12,7 +12,7 @@ lead to non-deterministic and often unexpected outcomes.
 
 Consider a simple example in which two threads concurrently increment a shared counter:
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{cc}
 \toprule
@@ -27,7 +27,7 @@ Consider a simple example in which two threads concurrently increment a shared c
 it is typically implemented as a sequence of three steps: reading the value from memory,
 incrementing it, and writing it back:
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{cc}
 \toprule
@@ -110,7 +110,7 @@ is not straightforward. The core functionality is defined in
 and the implementation methods \texttt{doGet}, \texttt{doSet}, and \texttt{run} 
 carry package-private visibility, making them inaccessible outside the package.
 Prior work addressed this by forking the Clojure runtime~\cite{jensen2016} and
-adding extensions under the same package, but that couples the solution to
+adding extensions locally, but that couples the solution to
 a language runtime and increases maintenance burden.
 
 The result is a gap in Clojure's STM model: no mechanism exists for safely coordinating 
@@ -135,3 +135,58 @@ The proposed approach is guided by three objectives:
         lifecycle hooks
   \item a declarative public API
 \end{enumerate}
+
+\noindent Table~\ref{tab:public-api} summarizes the complete public API surface. All
+transactional operations are in the \texttt{opusdb.atomic.stm} namespace; lifecycle hooks
+are in \texttt{opusdb.atomic.tx-hooks}.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{@{} l l X @{}}
+\toprule
+\textbf{Function / Macro} & \textbf{Namespace} & \textbf{Description} \\
+\midrule
+\texttt{(ref \textit{initial-val})}
+    & \texttt{stm}
+    & Creates a new transactional reference with the given initial value. \\
+\texttt{(deref \textit{r})}
+    & \texttt{stm}
+    & Reads reference \textit{r} within the current transaction, or directly
+      if called outside one. \\
+\texttt{(ref-set \textit{r} \textit{v})}
+    & \texttt{stm}
+    & Buffers a write of value \textit{v} to reference \textit{r};
+      must be called inside \texttt{dosync}. \\
+\texttt{(dosync \&\ \textit{body})}
+    & \texttt{stm}
+    & Executes \textit{body} atomically. Retries on conflict; composes with
+      enclosing transactions via flat nesting. \\
+\texttt{(on-commit \textit{handler})}
+    & \texttt{tx-hooks}
+    & Registers \textit{handler} to be called exactly once after the
+      enclosing transaction commits. \\
+\texttt{(on-rollback \textit{handler})}
+    & \texttt{tx-hooks}
+    & Registers \textit{handler} to be called on each abort of the
+      enclosing transaction, before retry. \\
+\bottomrule
+\end{tabularx}
+\caption{Public API of the proposed STM system.}
+\label{tab:public-api}
+\end{table}
+
+\noindent A typical usage combining all six entry points is shown in
+Listing~\ref{lst:api-example}.
+
+\begin{lstlisting}[
+    language=Lisp,
+    caption={Typical usage of the public API: transactional transfer with lifecycle hooks.},
+    label={lst:api-example}
+]
+(dosync
+  (let [bal (deref account)]
+    (ref-set account (- bal amount))
+    (on-commit  #(log/info "Transfer committed"))
+    (on-rollback #(log/warn "Transfer retried"))))
+\end{lstlisting}

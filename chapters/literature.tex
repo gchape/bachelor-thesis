@@ -166,7 +166,15 @@ dynamic.''~\cite{dice2006transactional}
 Since the data set must be declared upfront, any transaction that discovers
 its memory locations at runtime (such as traversing a linked list or walking
 a tree) cannot be expressed in Shavit and Touitou's model. This restriction
-motivated later STM designs.
+motivated later STM designs. It is also directly relevant to the present
+system: Clojure programs routinely discover their data sets at runtime,
+selecting accounts at random as in the bank transfer benchmark, or following
+a chain of \texttt{deref} calls through a dynamic structure, making static
+transactions an unsuitable foundation. The system described in this thesis
+therefore requires the dynamic model established by subsequent STM research,
+and specifically inherits from TL2~\cite{dice2006transactional} the property
+that the write set is assembled speculatively and locked only at commit time,
+with no requirement that locations be declared in advance.
 
 \subsection{Concurrency Control}
 
@@ -200,7 +208,7 @@ properties:
     \item If a transaction holds an s-lock on a data item, no other active
           transaction may concurrently modify that item.
     \item If a transaction holds an x-lock, no other active transaction may
-          either read or write the protected data item.
+          access the protected data item.
 \end{enumerate}
 
 Although S2PL guarantees serializability, holding locks until transaction
@@ -243,7 +251,13 @@ Since read-only transactions have a consistent view of the data, they never
 acquire locks and therefore never have to wait~\cite{bernstein1983}.
 Clojure's adoption of MVCC for its STM system~\cite{clojure_refs} showed that
 MVCC could be effectively applied beyond database systems, influencing the
-design of the system in this thesis.
+design of the system in this thesis. The key design implication is that MVCC
+separates the concern of read consistency from the concern of write
+serialization, that makes MVCC well-suited to read-dominated workloads, and it 
+is precisely the property exploited in
+Section~\ref{sec:read-write-heavy}, where 90\% read-only transactions achieve
+the highest throughput of any evaluated scenario by bypassing the commit lock
+entirely.
 
 \subsubsection{Transactional Locking II (TL2)}
 
@@ -330,7 +344,14 @@ faster than a single global lock~\cite{dice2006transactional}.
 
 TL2's separation of read-set and write-set combined with its global version
 clock provides a natural foundation for extending the algorithm with MVCC.
-The design decisions and extensions adopted in this thesis are discussed in
+Two aspects of TL2 directly shape the decisions made in this thesis. First,
+TL2 detects write conflicts at commit time; the proposed system instead detects
+them eagerly at the point of write via \texttt{try-acquire!}, aborting the
+conflicting transaction immediately rather than allowing it to reach the commit phase.
+Second, TL2 retains only the current committed value of each location; the
+proposed system extends this with a bounded version history per reference,
+enabling consistent reads without reader-writer blocking. The design decisions
+and extensions adopted in this thesis are discussed in
 Chapter~\ref{ch:implementation}.
 
 \subsubsection{Synchronization Anomalies in STM}
@@ -351,12 +372,13 @@ from Parri's taxonomy remain relevant:
 \end{itemize}
 
 Non-repeatable reads are prevented by the read-set caching introduced in
-Section~\ref{sec:reading}: once a reference is resolved against the transaction's snapshot,
-the observed value is recorded in the read set and returned on all subsequent reads within
-the same transaction. Intermediate lost updates are prevented by the ownership protocol
-described in Section~\ref{sec:conflict-resolution}: a transaction must acquire exclusive ownership of
-a reference before buffering a write, so two concurrent transactions cannot both commit
-conflicting writes to the same location.
+Section~\ref{sec:reading}: once a reference is resolved against the
+transaction's snapshot, the observed value is recorded in the read set and
+returned on all subsequent reads within the same transaction. Intermediate
+lost updates are prevented by the ownership protocol described in
+Section~\ref{sec:conflict-resolution}: a transaction must acquire exclusive
+ownership of a reference before buffering a write, so two concurrent
+transactions cannot both apply conflicting writes to the same location.
 
 \section{Existing Clojure STM Approaches and Limitations}
 
@@ -364,8 +386,8 @@ Clojure's STM exposes a concise API built around \texttt{dosync}, a macro
 executing a function body in which reads and writes to \texttt{Refs},
 Clojure's transactional variables, are executed
 atomically~\cite{clojure_refs}. The implementation is based on MVCC,
-implemented primarily within the \texttt{LockingTransaction} class. 
-Table~\ref{tab:clojure-stm} summarizes the key internal components of 
+implemented primarily within the \texttt{LockingTransaction} class.
+Table~\ref{tab:clojure-stm} summarizes the key internal components of
 \texttt{LockingTransaction} and \texttt{Ref}.
 
 \begin{table}[htbp]
@@ -404,12 +426,12 @@ buffers the new value in \texttt{vals} without modifying shared memory until
 commit. On commit, all buffered values in \texttt{vals} are applied
 atomically and write locks are released.
 
-However, the system does not provide a mechanism to coordinate with side-effects. 
-This is a deliberate design choice; for example, the \texttt{io!} macro exists 
-precisely to throw an exception if evaluated within a transaction to enforce 
-this purity. Consequently, this leaves no principled mechanism for use cases 
-such as sending a notification exactly once when a transaction commits, 
-or cleaning up an external resource on abort.
+However, the system does not provide a mechanism to coordinate with
+side-effects. This is a deliberate design choice; for example, the
+\texttt{io!} macro exists precisely to throw an exception if evaluated within
+a transaction to enforce this purity. Consequently, this leaves no principled
+mechanism for use cases such as sending a notification exactly once when a
+transaction commits, or cleaning up an external resource on abort.
 
 Extending the native STM to address this is not straightforward. The core
 transactional logic resides in \texttt{LockingTransaction.java} within the
@@ -426,9 +448,16 @@ this approach couples the extension tightly to a specific runtime version,
 introducing a long-term maintenance burden. For the purposes of this thesis,
 such runtime modification is not acceptable.
 
-The system presented in this thesis therefore implements side-effect
-handling entirely at the language level, integrating side-effect 
-coordination into the transactional lifecycle of the proposed STM 
-implementation. Furthermore, this thesis argues for formal correctness 
-guarantees of opacity~\cite{guerraoui2007} and global 
-progress~\cite{bushkov2012}.
+The system presented in this thesis takes a structurally different approach.
+Rather than extending \texttt{LockingTransaction} from within the runtime,
+side-effect coordination is implemented entirely at the language level by
+maintaining two \texttt{ConcurrentHashMap} tables indexed by transaction ID,
+one for commit handlers and one for rollback handlers. This decouples the
+hook mechanism from any particular Clojure runtime version.
+
+The trade-off is that the implementation cannot intercept internal runtime
+events such as barging or the native \texttt{doGet}/\texttt{doSet} paths.
+The benefit is full independence from any specific Clojure release.
+Furthermore, this thesis argues formal correctness guarantees of
+opacity~\cite{guerraoui2007} and global progress~\cite{bushkov2012}, which
+the prior work of \citeauthor{jensen2016}~\cite{jensen2016} does not address.

@@ -188,7 +188,7 @@ guaranteed to observe a state that was consistent at $w_r$.
 \paragraph{Termination of Zombie Transactions.}
 A status check before every critical operation ensures that no transaction
 continues execution after its ownership has been stolen. This prevents zombie
-transactions --- those logically aborted but still physically executing ---
+transactions, those logically aborted but still physically executing,
 from observing inconsistent states produced by concurrent writes after $w_r$.
 
 Together, these properties ensure that every transaction observes only states
@@ -395,7 +395,7 @@ classes according to their observable behaviour in a history.
 
 \begin{definition}[Correct Process~{\cite{bushkov2012}}]
 A thread $p_k$ is \emph{correct} in $H$ if $H|_{p_k}$ contains infinitely many
-$\textsc{Ok}(v)$ or $\textsc{Abort}$ outcomes --- that is, $p_k$ persists
+$\textsc{Ok}(v)$ or $\textsc{Abort}$ outcomes: that is, $p_k$ persists
 indefinitely without exiting via $\textsc{Exception}(e)$.
 \end{definition}
 

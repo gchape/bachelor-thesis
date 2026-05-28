@@ -1,7 +1,6 @@
 \documentclass[12pt]{report}
-
 \usepackage[a4paper, left=3cm, right=1.5cm, top=2.5cm, bottom=2.5cm]{geometry}
-\usepackage[numbers]{natbib}
+\usepackage[numbers,sort&compress]{natbib}
 \usepackage{setspace}
 \usepackage{graphicx}
 \usepackage{multirow}
@@ -12,50 +11,55 @@
 \usepackage{amsmath}
 \let\openbox\relax
 \usepackage{amsthm}
-\usepackage{url}
-\Urlmuskip=0mu plus 1mu
+\usepackage{xurl}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, positioning, arrows.meta, decorations.pathreplacing, calc}
 \usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{booktabs}
+\usepackage{tabularx}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
-
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
-
 \lstset{
-    basicstyle=\ttfamily\small,
+    basicstyle=\ttfamily\footnotesize,
     keywordstyle=\bfseries,
     commentstyle=\itshape,
     columns=fullflexible,
     keepspaces=true,
     showstringspaces=false,
     frame=single,
-    breaklines=true
+    breaklines=true,
+    aboveskip=4pt,
+    belowskip=4pt
 }
-
+\setlength{\intextsep}{8pt}
+\setlength{\floatsep}{8pt}
 \onehalfspacing
 \sloppy
-
 \begin{document}
 
 \begin{titlepage}
 \centering
 {\large Kutaisi International University \par}
-\vspace{0.5cm}
+\vspace{0.3cm}
 {\large School of Computer Science \par}
-\vspace{2cm}
-{\LARGE \textbf{Design and Evaluation of an MVCC-Based STM in Clojure} \par}
-\vspace{2cm}
-{\Large Giorgi Chapidze \par}
-\vspace{2cm}
+\vspace{0.3cm}
 {\large Bachelor of Computer Science \par}
 \vspace{2cm}
-{\large Supervisor: Zaal Beriashvili \par}
+{\Large \textbf{Giorgi Chapidze} \par}
+\vspace{2cm}
+{\Large \textbf{Design and Evaluation of an MVCC-Based STM in Clojure} \par}
+\vspace{3cm}
+{\normalsize The thesis is completed for obtaining the academic degree of\\
+Bachelor of Computer Science \par}
+\vspace{3cm}
+{\normalsize Bachelor's Thesis Supervisor\\[0.4cm]
+Zaal Beriashvili\\[0.2cm]
+Lecturer \par}
 \vfill
-{\large Kutaisi, 2026 \par}
+{\normalsize Kutaisi, 2026 \par}
 \end{titlepage}
 
 \pagenumbering{roman}
@@ -74,31 +78,33 @@ Giorgi Chapidze \\
 
 \chapter*{Abstract}
 Clojure's native Software Transactional Memory (STM) provides no safe mechanism for
-coordinating side effects such as logging, notifications, or external API calls. 
-This thesis presents the design, formal analysis, and implementation
-of a Multi-Version Concurrency Control (MVCC)-based STM system for Clojure that addresses
-this gap, inspired by Transactional Locking II (TL2)~\cite{dice2006transactional}.
- 
-The system introduces a transactional event system that defers side effects to commit or
-rollback boundaries, implements a per-reference ownership protocol that resolves write
-conflicts eagerly by transaction age, and maintains a bounded version history. The system
-is argued to satisfy opacity~\cite{guerraoui2007}, guaranteeing that every
-transaction, including aborted ones, always observes a consistent state, and global
-progress~\cite{bushkov2012}, guaranteeing that at least one transaction makes
-progress at all times.
- 
+coordinating side effects such as logging, notifications, or external API calls.
+This thesis presents the design, formal analysis, and implementation of a
+Multi-Version Concurrency Control (MVCC)-based STM system for Clojure that addresses
+this gap, inspired by Transactional Locking II (TL2).
+
+The system introduces a transactional event system that defers side effects to commit
+or rollback boundaries, implements a per-reference ownership protocol that resolves
+write conflicts eagerly by transaction age, and maintains a bounded version history.
+The system is argued to satisfy opacity, guaranteeing that every transaction,
+including aborted ones, always observes a consistent state, and global progress,
+guaranteeing that at least one transaction makes progress at all times.
+
 Evaluation demonstrates strong throughput under read-heavy workloads, peaking at
-2{,}288{,}055 transactions per second at twelve threads, and good scalability under high
+2,288,055 transactions per second at twelve threads, and good scalability under high
 contention. The transactional event system introduces an overhead of approximately
-$0.16\,\mu\text{s}$ per commit, roughly 10\% of the baseline commit cost, demonstrating
-that side-effect coordination can be added to a transactional model without
-meaningful performance penalty.
+$0.16\,\mu\text{s}$ per commit, roughly 10\% of the baseline commit cost,
+demonstrating that side-effect coordination can be added to a transactional model
+without meaningful performance penalty.
+
+\bigskip
+\noindent\textbf{Keywords:} software transactional memory, multi-version concurrency
+control, Clojure, opacity, global progress, transactional events, TL2
 
 \tableofcontents
-
 \newpage
-\pagenumbering{arabic}
 
+\pagenumbering{arabic}
 \input{chapters/introduction}
 \input{chapters/literature}
 \input{chapters/methodology}
@@ -106,7 +112,7 @@ meaningful performance penalty.
 \input{chapters/results}
 \input{chapters/conclusion}
 
-\bibliographystyle{plainnat}
+\bibliographystyle{abbrvnat}
 \bibliography{references}
 
 \end{document}
