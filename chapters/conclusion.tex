@@ -37,16 +37,6 @@ retain only versions newer than this threshold. This eliminates unnecessary abor
 history trimming while keeping memory use bounded by the span between $w_{\min}$ and the
 current write point.
 
-\paragraph{Starvation under adversarial scheduling.}
-Because younger transactions preempt older ones, a transaction may be repeatedly displaced
-under sustained high contention, consistent with the impossibility of local progress
-established in Chapter~\ref{ch:formal-model}. In the benchmarks conducted, starvation was not
-observed at the thread counts evaluated; however, it cannot be ruled out under adversarial
-scheduling or significantly higher concurrency. It could be mitigated in practice by
-making backoff age-aware: older transactions back off less aggressively than newer ones,
-giving them more commit attempts per unit of time and a higher probability of winning the
-next ownership round.
-
 \paragraph{Lifecycle hook granularity.}
 The current hook model exposes only \texttt{on-commit} and \texttt{on-rollback}.
 Extending the system with \texttt{before-commit}, \texttt{after-commit},
