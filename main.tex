@@ -57,7 +57,10 @@ Bachelor of Computer Science \par}
 \vspace{3cm}
 {\normalsize Bachelor's Thesis Supervisor\\[0.4cm]
 Zaal Beriashvili\\[0.2cm]
-Lecturer \par}
+Lecturer\\[0.6cm]
+Bachelor's Thesis Co-Supervisor\\[0.4cm]
+Dr.\ Markus Neuhauser\\[0.2cm]
+Professor \par}
 \vfill
 {\normalsize Kutaisi, 2026 \par}
 \end{titlepage}
@@ -86,9 +89,8 @@ this gap, inspired by Transactional Locking II (TL2).
 The system introduces a transactional event system that defers side effects to commit
 or rollback boundaries, implements a per-reference ownership protocol that resolves
 write conflicts eagerly by transaction age, and maintains a bounded version history.
-The system is argued to satisfy opacity, guaranteeing that every transaction,
-including aborted ones, always observes a consistent state, and global progress,
-guaranteeing that at least one transaction makes progress at all times.
+The system is shown to satisfy opacity, guaranteeing that every transaction,
+including aborted ones, always observes a consistent state.
 
 Evaluation demonstrates strong throughput under read-heavy workloads, peaking at
 2,288,055 transactions per second at twelve threads, and good scalability under high

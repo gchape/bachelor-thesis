@@ -4,8 +4,8 @@
 This thesis presented the design, formal analysis, and implementation of
 an MVCC-based Software Transactional Memory system in Clojure, inspired by the
 Transactional Locking II~\cite{dice2006transactional} algorithm. The system
-was argued to satisfy opacity~\cite{guerraoui2007} and global
-progress~\cite{bushkov2012}, and was extended with a transactional event
+was shown to satisfy opacity~\cite{guerraoui2007}, 
+and was extended with a transactional event
 system that supports side effects at commit and rollback boundaries.
 Evaluation showed strong throughput under read-heavy workloads and good
 scalability under high contention, while write-heavy workloads revealed
