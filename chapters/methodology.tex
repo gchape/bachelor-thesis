@@ -1,15 +1,12 @@
 \chapter{Formal Model}
 \label{ch:formal-model}
 
-\textbf{Reader's Guide:} This chapter formalizes the concurrency control
-properties of the proposed Software Transactional Memory (STM) system,
-establishing the theoretical correctness of how the system handles opacity.
+\textbf{Reader's Guide:} This chapter formalizes the proposed STM system
+(write points, versioned references, transactions, and commit protocol) and
+proves that every history it produces satisfies opacity~\cite{guerraoui2007}.
 The corresponding implementation is covered in Chapter~\ref{ch:implementation}.
 
 \section{Preliminaries}
-
-To formally define the system, we abstract the state into two core ideas: a
-timeline of global progress and the individual versioned variables.
 
 Let $\mathcal{W}$ be the totally ordered set of \emph{write points}, where each
 $w \in \mathcal{W}$ is a positive integer corresponding to a snapshot of the
@@ -32,7 +29,7 @@ That is, $\mathit{snap}$ returns the value committed at the latest write point
 that (i)~does not exceed $w_r$ and (ii)~is in the domain of $\mathit{hist}(r)$,
 i.e.\ some transaction actually wrote $r$ at that point.
 
-\section{Transactions and Histories}
+\section{Transactions}
 
 \begin{definition}[Transaction]
 A transaction $T$ is a tuple $T = \langle\, id,\; w_r,\; RS,\; WS,\; \sigma \,\rangle$ where:
@@ -50,15 +47,6 @@ A transaction $T$ is a tuple $T = \langle\, id,\; w_r,\; RS,\; WS,\; \sigma \,\r
         \textsc{Committed}\}$ is the transaction status.
 \end{itemize}
 \end{definition}
-
-\begin{definition}[History]
-A \emph{history} $H$ of the system is a sequence of invocation and response
-events produced by concurrent transactions. $H$ is \emph{well-formed} if for
-every transaction $T$ in $H$, the events of $T$ form a sequence of alternating
-invocations and responses.
-\end{definition}
-
-We consider only well-formed histories throughout.
 
 \section{Operations}
 
@@ -225,8 +213,8 @@ transaction to a terminal status, subject to the following constraints:
         with an $\textsc{Abort}$ outcome in $H'$.
   \item Every live transaction that \emph{is} commit-pending may be appended
         with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$; both are
-        permitted because the commit lock is held and the outcome has not been
-        externally determined.
+        permitted because the commit lock is held and the outcome has not yet 
+        been determined.
 \end{itemize}
 
 We denote by $\operatorname{Complete}(H)$ the set of all completions of $H$

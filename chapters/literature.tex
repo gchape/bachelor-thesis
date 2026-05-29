@@ -436,12 +436,6 @@ a transaction to enforce this purity. Consequently, this leaves no principled
 mechanism for use cases such as sending a notification exactly once when a
 transaction commits, or cleaning up an external resource on abort.
 
-Extending the native STM to address this is not straightforward. The core
-transactional logic resides in \texttt{LockingTransaction.java} within the
-\texttt{clojure.lang} package, and its fundamental operations \texttt{doGet},
-\texttt{doSet}, and \texttt{run} carry package-private visibility, making them
-inaccessible outside the runtime.
-
 \citeauthor{jensen2016}~\cite{jensen2016} addressed this by forking the
 Clojure runtime and extending \texttt{LockingTransaction} directly,
 introducing \texttt{on-commit}, \texttt{after-commit}, and \texttt{on-abort}
@@ -458,8 +452,6 @@ maintaining two \texttt{ConcurrentHashMap} tables indexed by transaction ID,
 one for commit handlers and one for rollback handlers. This decouples the
 hook mechanism from any particular Clojure runtime version.
 
-The trade-off is that the implementation cannot intercept internal runtime
-events such as barging or the native \texttt{doGet}/\texttt{doSet} paths.
 The benefit is full independence from any specific Clojure release.
 Furthermore, this thesis demonstrates formal correctness guarantees of
 opacity~\cite{guerraoui2007}.
