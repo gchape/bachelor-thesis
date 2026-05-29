@@ -13,9 +13,8 @@ operated on by two atomic operations: P (\emph{passeren}, to pass) and V
 (\emph{vrijgeven}, to release), which provide granular access control but leave
 room for errors, as illustrated in Listing~\ref{lst:semaphore}.
 
-\begin{lstlisting}[language=Lisp, label=lst:semaphore,
-  caption={Explicit lock-based synchronization vulnerable to lock leakage
-  under exceptions.}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (defn transfer [from to amount]
   (.acquire (:lock from))
   (.acquire (:lock to))
@@ -23,18 +22,18 @@ room for errors, as illustrated in Listing~\ref{lst:semaphore}.
   ;; prevents proper lock release.
   (when (<= amount 0)
     (throw (Exception. "Invalid transfer amount")))
-    
   (when (< (:balance from) amount)
     (throw (Exception. "Insufficient funds")))
-  
   (set! (:balance from) 
         (- (:balance from) amount))
   (set! (:balance to)   
         (+ (:balance to) amount))
-  
   (.release (:lock to))
   (.release (:lock from)))
-\end{lstlisting}
+\end{minted}
+\caption{Explicit lock-based synchronization vulnerable to lock leakage under exceptions.}
+\label{lst:semaphore}
+\end{listing}
 
 To address these limitations, Brinch Hansen and Hoare introduced
 monitors~\cite{hoare1974}, which automatically release locks when execution
@@ -42,23 +41,23 @@ exits scope, including during exceptional control flow, and provide support
 for \emph{condition variables} controlled by a wait/signal
 mechanism~\cite{hoare1974}.
 
-\begin{lstlisting}[language=Lisp, label=lst:monitor,
-  caption={Monitor-style synchronization with automatic lock release
-  (RAII-style locking).}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (defn transfer-safe [from to amount]
   (locking from
     (locking to
       (when (<= amount 0)
         (throw (Exception. "Invalid transfer amount")))
-        
       (when (< (:balance from) amount)
         (throw (Exception. "Insufficient funds")))
-      
       (set! (:balance from) 
             (- (:balance from) amount))
       (set! (:balance to)   
             (+ (:balance to) amount)))))
-\end{lstlisting}
+\end{minted}
+\caption{Monitor-style synchronization with automatic lock release (RAII-style locking).}
+\label{lst:monitor}
+\end{listing}
 
 However, monitors do not eliminate all concurrency challenges. Coarse-grained
 locking reduces parallelism and provides no rollback semantics.
@@ -107,8 +106,8 @@ write, and (4) \textsc{Commit}. On failure at any step the process retries,
 possibly applying \emph{adaptive backoff} under high
 contention~\cite{herlihy1993}.
 
-\begin{lstlisting}[language=Lisp, numbers=none,
-  caption={HTM-style transaction.}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (defn transfer-htm [account-a account-b amount]
   (loop []
     (let [bal-a (LT account-a)
@@ -121,7 +120,9 @@ contention~\cite{herlihy1993}.
             :success
             (do (adaptive-backoff!) (recur))))
         (do (adaptive-backoff!) (recur))))))
-\end{lstlisting}
+\end{minted}
+\caption{HTM-style transaction.}
+\end{listing}
 
 Two conflict classes can cause \textsc{Validate} or \textsc{Commit} to fail:
 
@@ -149,8 +150,8 @@ As \citeauthor{dice2006transactional} observe, ``the dominant trend in
 transactional memory design moved toward transactions that are unbounded and
 dynamic.''~\cite{dice2006transactional}
 
-\begin{lstlisting}[language=Lisp, numbers=none,
-  caption={Static vs.\ dynamic transactions.}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 ; Static: data set fixed before execution
 (defn transfer [account-a account-b amount]
   (dosync
@@ -161,7 +162,9 @@ dynamic.''~\cite{dice2006transactional}
 (dosync
   (let [node @head]
     (ref-set head @(:next node))))
-\end{lstlisting}
+\end{minted}
+\caption{Static vs.\ dynamic transactions.}
+\end{listing}
 
 Since the data set must be declared upfront, any transaction that discovers
 its memory locations at runtime (such as traversing a linked list or walking

@@ -69,22 +69,28 @@ over lock-based mechanisms: \emph{composability}. Consider a bank transfer:
 withdraw from one account and deposit into another. Both operations can be made
 individually atomic, but composing them is not straightforward:
 
-\begin{lstlisting}[language=Lisp, caption={Non-composable transfer}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (defn transfer [from to amount]
   (withdraw from amount)   ; atomic
   (deposit to amount))     ; atomic, but not together
-\end{lstlisting}
+\end{minted}
+\caption{Non-composable transfer}
+\end{listing}
 
 \noindent Between the two operations, another thread may observe an
 inconsistent intermediate state. With STM, both operations are composed in a
 transaction and committed together atomically:
 
-\begin{lstlisting}[language=Lisp, caption={Composable transfer with STM}]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (defn transfer [from to amount]
   (dosync
     (withdraw from amount)
     (deposit to amount)))
-\end{lstlisting}
+\end{minted}
+\caption{Composable transfer with STM}
+\end{listing}
 
 \noindent If any conflict occurs mid-execution, the entire transaction is
 retried and no intermediate state is ever visible to other threads. Larger
@@ -179,14 +185,14 @@ are in \texttt{opusdb.atomic.tx-hooks}.
 \noindent A typical usage combining all six entry points is shown in
 Listing~\ref{lst:api-example}.
 
-\begin{lstlisting}[
-    language=Lisp,
-    caption={Typical usage of the public API: transactional transfer with lifecycle hooks.},
-    label={lst:api-example}
-]
+\begin{listing}[ht]
+\begin{minted}{clojure}
 (dosync
   (let [bal (deref account)]
     (ref-set account (- bal amount))
     (on-commit  #(log/info "Transfer committed"))
     (on-rollback #(log/warn "Transfer retried"))))
-\end{lstlisting}
+\end{minted}
+\caption{Typical usage of the public API: transactional transfer with lifecycle hooks.}
+\label{lst:api-example}
+\end{listing}

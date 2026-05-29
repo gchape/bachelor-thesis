@@ -1,4 +1,4 @@
-\documentclass[12pt]{report}
+\documentclass[12pt, oneside]{report}
 \usepackage[a4paper, left=3cm, right=1.5cm, top=2.5cm, bottom=2.5cm]{geometry}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{setspace}
@@ -6,7 +6,6 @@
 \usepackage{multirow}
 \usepackage{newtxtext,newtxmath}
 \usepackage[zerostyle=b]{newtxtt}
-\usepackage{listings}
 \usepackage{float}
 \usepackage{amsmath}
 \let\openbox\relax
@@ -15,71 +14,89 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, positioning, arrows.meta, decorations.pathreplacing, calc}
 \usepackage{xcolor}
-\usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\usepackage[newfloat]{minted}
+\usepackage{caption}
+\usepackage{hyperref}
+\hypersetup{
+    pdftitle={Bachelor's Thesis – Giorgi Chapidze},
+}
+
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
-\lstset{
-    basicstyle=\ttfamily\footnotesize,
-    keywordstyle=\bfseries,
-    commentstyle=\itshape,
-    columns=fullflexible,
-    keepspaces=true,
-    showstringspaces=false,
-    frame=single,
+
+\SetupFloatingEnvironment{listing}{name=Listing}
+\newcommand{\listoflistingsname}{List of Listings}
+
+\setminted{
+    fontsize=\footnotesize,
     breaklines=true,
-    aboveskip=4pt,
-    belowskip=4pt
+    frame=single,
+    framesep=4pt,
+    baselinestretch=1.0
 }
+
 \setlength{\intextsep}{8pt}
 \setlength{\floatsep}{8pt}
-\onehalfspacing
 \sloppy
+
 \begin{document}
+\onehalfspacing
 
 \begin{titlepage}
+\thispagestyle{empty}
 \centering
-{\large Kutaisi International University \par}
-\vspace{0.3cm}
-{\large School of Computer Science \par}
-\vspace{0.3cm}
-{\large Bachelor of Computer Science \par}
+
+{\fontsize{14}{17}\selectfont
+  Kutaisi International University \\[4pt]
+  School of Computer Science       \\[4pt]
+  Bachelor of Computer Science     \par}
+
 \vspace{2cm}
-{\Large \textbf{Giorgi Chapidze} \par}
+{\fontsize{16}{20}\selectfont\bfseries
+  Giorgi Chapidze \par}
+
 \vspace{2cm}
-{\Large \textbf{Design and Evaluation of an MVCC-Based STM in Clojure} \par}
+{\fontsize{16}{20}\selectfont\bfseries
+  Design and Evaluation of an MVCC-Based STM in Clojure \par}
+
 \vspace{3cm}
-{\normalsize The thesis is completed for obtaining the academic degree of\\
-Bachelor of Computer Science \par}
-\vspace{3cm}
-{\normalsize Bachelor's Thesis Supervisor\\[0.4cm]
-Zaal Beriashvili\\[0.2cm]
-Lecturer\\[0.6cm]
-Bachelor's Thesis Co-Supervisor\\[0.4cm]
-Dr.\ Markus Neuhauser\\[0.2cm]
-Professor \par}
+{\fontsize{14}{17}\selectfont
+  The thesis is completed for obtaining the academic degree of \\[4pt]
+  Bachelor of Computer Science \par}
+
+\vspace{3.5cm}
+{\fontsize{12}{15}\selectfont
+  Bachelor's Thesis Supervisor \\[6pt]
+  Zaal Beriashvili             \\[4pt]
+  Lecturer                     \\[14pt]
+  Bachelor's Thesis Co-Supervisor \\[6pt]
+  Dr.\ Markus Neuhauser           \\[4pt]
+  Professor \par}
+
 \vfill
-{\normalsize Kutaisi, 2026 \par}
+{\fontsize{12}{15}\selectfont Kutaisi, 2026 \par}
 \end{titlepage}
 
 \pagenumbering{roman}
 
 \chapter*{Declaration}
+\addcontentsline{toc}{chapter}{Declaration}
+
 I, the author of this bachelor's thesis, declare that the thesis is my own original
 work and does not contain any material previously published, submitted for publication,
 or presented for defense by other authors, unless properly referenced or cited in
 accordance with academic standards.
 
-\vspace{1cm}
-\begin{flushright}
-Giorgi Chapidze \\
-\today
-\end{flushright}
+\vspace{1.5cm}
+\noindent Giorgi Chapidze \hfill \today
 
 \chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
 Clojure's native Software Transactional Memory (STM) provides no safe mechanism for
 coordinating side effects such as logging, notifications, or external API calls.
 This thesis presents the design, formal analysis, and implementation of a
@@ -104,9 +121,13 @@ without meaningful performance penalty.
 control, Clojure, opacity, transactional events, TL2
 
 \tableofcontents
-\newpage
+\listoffigures
+\listoftables
+\listoflistings
 
+\clearpage
 \pagenumbering{arabic}
+
 \input{chapters/introduction}
 \input{chapters/literature}
 \input{chapters/methodology}
