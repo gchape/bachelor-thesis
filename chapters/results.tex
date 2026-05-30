@@ -323,7 +323,7 @@ This is the only consistent directional effect in the table, and it goes in the 
 \texttt{apply-writes!}, which appends a new entry to the history vector via \texttt{conj}
 and trims via \texttt{subvec} on every commit. At sizes 128 and 256 these vectors are large
 enough that allocation and GC cost becomes visible at 12 threads, where the commit rate is
-high enough to stress the the garbage collector. At 4 and 6 threads the commit rate is lower
+high enough to stress the garbage collector. At 4 and 6 threads the commit rate is lower
 and the overhead does not produce a considerable difference in throughput.
 
 Conflict abort rates at 12 threads are elevated throughout (0.33-0.49), consistent with the
