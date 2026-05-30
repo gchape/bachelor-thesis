@@ -11,7 +11,7 @@ Dijkstra~\cite{dijkstra1968} introduced semaphores as a low-level
 primitive for guarding critical sections. A semaphore is a non-negative integer
 operated on by two atomic operations: P (\emph{passeren}, to pass) and V
 (\emph{vrijgeven}, to release), which provide granular access control but leave
-room for errors, as illustrated in Listing~\ref{lst:semaphore}.
+room for programming errors, as illustrated in Listing~\ref{lst:semaphore}.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -347,14 +347,7 @@ faster than a single global lock~\cite{dice2006transactional}.
 
 TL2's separation of read-set and write-set combined with its global version
 clock provides a natural foundation for extending the algorithm with MVCC.
-Two aspects of TL2 directly shape the decisions made in this thesis. First,
-TL2 detects write conflicts at commit time; the proposed system instead detects
-them eagerly at the point of write via \texttt{try-acquire!}, aborting the
-conflicting transaction immediately rather than allowing it to reach the commit phase.
-Second, TL2 retains only the current committed value of each location; the
-proposed system extends this with a bounded version history per reference,
-enabling consistent reads without reader-writer blocking. The design decisions
-and extensions adopted in this thesis are discussed in
+The design decisions and extensions adopted in this thesis are discussed in
 Chapter~\ref{ch:implementation}.
 
 \subsubsection{Synchronization Anomalies in STM}

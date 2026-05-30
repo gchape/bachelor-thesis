@@ -136,13 +136,13 @@ declarative public API that integrates naturally with idiomatic Clojure code.
 
 The proposed approach is guided by three objectives:
 \begin{enumerate}
-  \item an MVCC-based STM system in Clojure, inspired by TL2
+  \item an MVCC-based STM system in Clojure
   \item an extension of the transactional model with commit and rollback
         lifecycle hooks
   \item a declarative public API
 \end{enumerate}
 
-\noindent Table~\ref{tab:public-api} summarizes the complete public API surface. All
+\noindent Table~\ref{tab:public-api} summarizes the complete public API. All
 transactional operations are in the \texttt{opusdb.atomic.stm} namespace; lifecycle hooks
 are in \texttt{opusdb.atomic.tx-hooks}.
 
@@ -159,7 +159,7 @@ are in \texttt{opusdb.atomic.tx-hooks}.
     \texttt{(deref \textit{r})}
                               & \texttt{stm}
                               & Reads reference \textit{r} within the current transaction, or directly
-    if called outside one.                                                                                                    \\
+    if called outside of one.                                                                                                    \\
     \texttt{(ref-set \textit{r} \textit{v})}
                               & \texttt{stm}
                               & Buffers a write of value \textit{v} to reference \textit{r};

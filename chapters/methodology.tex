@@ -325,6 +325,14 @@ snapshot, not just committed ones.
   concurrent transaction overwrote $r$ since $T$'s snapshot. By
   Lemma~\ref{lem:snapshot-legal}, $T$ is legal.
 
+  \paragraph{Step 6: Legality of aborted transactions.}
+  Whether aborted via ownership conflict (write-write) or read-set validation
+  failure (read-write), all reads used $\mathit{snap}(r, w_r(T))$.
+  In the ownership-conflict case, the aborted transaction's write set is
+  discarded entirely and no speculative value ever reaches shared memory;
+  only the winning transaction's writes are applied at commit time.
+  By Lemma~\ref{lem:snapshot-legal}, $T$ is legal in both cases.
+
   \paragraph{Step 5: Legality of commit-pending transactions resolved in Step~1.}
   Two cases arise:
   \begin{enumerate}
@@ -337,14 +345,6 @@ snapshot, not just committed ones.
     \item \emph{Validation fails, $T$ appended with $\textsc{Abort}$:}
           By Lemma~\ref{lem:snapshot-legal}, $T$ is legal.
   \end{enumerate}
-
-  \paragraph{Step 6: Legality of aborted transactions.}
-  Whether aborted via ownership conflict (write-write) or read-set validation
-  failure (read-write), all reads used $\mathit{snap}(r, w_r(T))$.
-  In the ownership-conflict case, the aborted transaction's write set is
-  discarded entirely and no speculative value ever reaches shared memory;
-  only the winning transaction's writes are applied at commit time.
-  By Lemma~\ref{lem:snapshot-legal}, $T$ is legal in both cases.
 
   \paragraph{Step 7: Legality of live transactions aborted in $H'$.}
   These transactions were appended with $\textsc{Abort}$ in Step~1 and all

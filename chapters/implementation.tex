@@ -67,10 +67,10 @@ Four constants govern system behaviour:
         commit, bounding per-reference memory use.
   \item[\texttt{max-retries} (96)] The maximum number of times a
         transaction is retried before the system throws unconditionally,
-        preventing livelock. The value of 96 was
-        chosen conservatively: at the maximum backoff of 32\,ms per retry, 96
-        retries represent about 2--3 seconds of cumulative delay, which is long
-        enough that a transaction still failing at that point is almost certainly in livelock rather than waiting on a genuinely slow but progressing system.
+        preventing livelock. The value of 96 represent about 2-3 seconds of
+        cumulative delay, which is long enough that a transaction still failing
+        at that point is almost certainly in livelock rather than waiting on a
+        genuinely slow but progressing system.
   \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] The
         lower and upper bounds of the exponential backoff delay applied
         after the fourth retry. Backoff is capped at 32\,ms to keep

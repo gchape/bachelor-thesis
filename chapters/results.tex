@@ -261,96 +261,108 @@ Section~\ref{sec:bottlenecks}.
 Each reference keeps a short history of past values so that concurrent readers can always
 find a consistent snapshot. A history that is too short forces reads to fail when no valid
 snapshot is available (a \emph{trim abort}); a history that is too long increases the time
-spent scanning that list on every read. To characterize this trade-off, the bank transfer
-scenario was repeated across history sizes of 8, 16, 32, and 64 at all three thread counts.
+spent scanning that list on every read and raises allocation pressure on each commit. To
+characterize this trade-off, the bank transfer scenario was repeated across history sizes of
+8, 16, 32, 64, 128, and 256 at thread counts of 4, 6, and 12, with 50,000 transactions per
+thread to provide a sufficient sample for detecting genuine effects.
 
 \begin{table}[H]
   \centering
   \caption{Version history size sweep: bank transfer throughput and abort rates
-    (20 accounts, 3{,}000 transactions per thread).}
+    (20 accounts, 50{,}000 transactions per thread).}
   \label{tab:history-sweep}
   \begin{tabular}{@{}r r r r r@{}}
     \toprule
     \textbf{\texttt{max-history}}   & \textbf{Threads}            & \textbf{TPS} &
     \textbf{Conflict aborts/commit} & \textbf{Trim aborts/commit}                              \\
     \midrule
-    8                               & 4                           & 315,642      & 0.13 & 0.00 \\
-    8                               & 6                           & 243,242      & 0.14 & 0.00 \\
-    8                               & 12                          & 179,881      & 0.55 & 0.00 \\
+    8                               & 4                           & 405,530      & 0.17 & 0.00 \\
+    8                               & 6                           & 518,980      & 0.15 & 0.00 \\
+    8                               & 12                          & 328,653      & 0.33 & 0.00 \\
     \midrule
-    16                              & 4                           & 285,371      & 0.12 & 0.00 \\
-    16                              & 6                           & 226,183      & 0.19 & 0.00 \\
-    16                              & 12                          & 186,386      & 0.59 & 0.00 \\
+    16                              & 4                           & 532,988      & 0.15 & 0.00 \\
+    16                              & 6                           & 475,417      & 0.15 & 0.00 \\
+    16                              & 12                          & 276,301      & 0.41 & 0.00 \\
     \midrule
-    32                              & 4                           & 313,661      & 0.13 & 0.00 \\
-    32                              & 6                           & 349,891      & 0.19 & 0.00 \\
-    32                              & 12                          & 233,055      & 0.50 & 0.00 \\
+    32                              & 4                           & 505,626      & 0.10 & 0.00 \\
+    32                              & 6                           & 526,794      & 0.14 & 0.00 \\
+    32                              & 12                          & 318,387      & 0.34 & 0.00 \\
     \midrule
-    64                              & 4                           & 412,767      & 0.11 & 0.00 \\
-    64                              & 6                           & 342,681      & 0.25 & 0.00 \\
-    64                              & 12                          & 309,651      & 0.20 & 0.00 \\
+    64                              & 4                           & 518,794      & 0.13 & 0.00 \\
+    64                              & 6                           & 454,909      & 0.18 & 0.00 \\
+    64                              & 12                          & 322,807      & 0.33 & 0.00 \\
+    \midrule
+    128                             & 4                           & 515,565      & 0.13 & 0.00 \\
+    128                             & 6                           & 520,253      & 0.15 & 0.00 \\
+    128                             & 12                          & 250,567      & 0.48 & 0.00 \\
+    \midrule
+    256                             & 4                           & 494,023      & 0.13 & 0.00 \\
+    256                             & 6                           & 502,525      & 0.12 & 0.00 \\
+    256                             & 12                          & 226,295      & 0.49 & 0.00 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Two results stand out.
+Three results stand out.
 
-First, trim aborts are zero in every cell, including at the smallest history size of 8. The
-bank transfer workload never exhausts the snapshot window under these conditions, so history
-size does not affect correctness here.
+First, trim aborts are zero in every cell across all history sizes and thread counts. The bank
+transfer workload distributes writes across 20 accounts, so any individual reference is
+written infrequently relative to the rate at which history slots cycle. A transaction's
+read-point is always recent enough that \texttt{find-entry} locates a valid snapshot, and the
+history window is never exhausted. This result is workload-dependent: trim aborts would appear
+in a workload that concentrates writes on very few references, where a single ref could
+accumulate enough commits to exhaust the window before a concurrent reader dereferences it.
 
-Second, conflict abort rates at 12 threads are much higher than at 4 or 6 threads, reaching
-0.50-0.59 at history sizes 8-32 before dropping to 0.20 at size 64. The elevated rate is
-caused by the commit lock. When 12 threads compete for the lock, each thread spends more time
-waiting for its turn. While a thread waits, other threads finish their commits and update the
-data. When the waiting thread finally gets the lock and checks whether its reads are still
-valid, it is more likely to find that something has changed - producing a conflict abort. The
-JFR data confirms this pressure: at 12 threads, threads spend 3.6 times more total time
-waiting for the commit lock than at 4 threads (see Section~\ref{sec:bottlenecks}). This also
-explains why throughput at 12 threads increases monotonically with history size, from
-179,881\,TPS at size 8 to 309,651\,TPS at size 64, fewer aborts mean less wasted work.
+Second, history size has no consistent effect on throughput at 4 and 6 threads across the
+range 8-256.
 
-The drop at size 64 is not fully explained by the data. No mechanistic explanation is strongly
-supported: trim aborts are zero throughout, ruling out snapshot eviction as a cause, and
-read-set invalidation at commit time can occur regardless of history size. Sampling variance
-is therefore the most likely explanation: the 3,000-transaction-per-thread sample yields
-approximately 36,000 total observations at 12 threads, and at the low abort rates observed at
-size 64 this may be insufficient to distinguish a genuine reduction from measurement noise. A
-longer run would be needed to confirm whether the drop is real.
-Distinguishing these causes is left for future work.
+Third, at 12 threads throughput declines at history sizes 128 and 256, falling from the
+318,000-328,000\,TPS range seen at sizes 8-64 to 250,567 and 226,295\,TPS respectively.
+This is the only consistent directional effect in the table, and it goes in the direction of
+\emph{larger history being worse}. The cause is allocation pressure in
+\texttt{apply-writes!}, which appends a new entry to the history vector via \texttt{conj}
+and trims via \texttt{subvec} on every commit. At sizes 128 and 256 these vectors are large
+enough that allocation and GC cost becomes visible at 12 threads, where the commit rate is
+high enough to stress the the garbage collector. At 4 and 6 threads the commit rate is lower
+and the overhead does not produce a considerable difference in throughput.
+
+Conflict abort rates at 12 threads are elevated throughout (0.33-0.49), consistent with the
+commit-lock pressure described in Section~\ref{sec:bottlenecks}, but show no reliable
+correlation with history size.
 
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-        title={Throughput vs.\ version history size (20 accounts)},
+        title={Throughput vs.\ version history size (20 accounts, 50{,}000 txns/thread)},
         xlabel={\texttt{max-history}},
         ylabel={Transactions / sec},
-        width=0.75\textwidth, height=6cm,
-        xtick={8,16,32,64},
+        width=0.85\textwidth, height=6.5cm,
+        xtick={8,16,32,64,128,256},
         ymin=0,
         ymajorgrids=true, grid style=dashed,
         mark=*, tick label style={font=\small},
         label style={font=\small}, title style={font=\small\itshape},
-        legend pos=south east,
+        legend pos=north east,
       ]
       \addplot[color=blue!60!black, mark=*] coordinates {
-          (8,315642) (16,285371) (32,313661) (64,412767)
+          (8,405530) (16,532988) (32,505626) (64,518794) (128,515565) (256,494023)
         };
       \addlegendentry{4 threads}
       \addplot[color=red!60!black, mark=*] coordinates {
-          (8,243242) (16,226183) (32,349891) (64,342681)
+          (8,518980) (16,475417) (32,526794) (64,454909) (128,520253) (256,502525)
         };
       \addlegendentry{6 threads}
       \addplot[color=green!50!black, mark=*] coordinates {
-          (8,179881) (16,186386) (32,233055) (64,309651)
+          (8,328653) (16,276301) (32,318387) (64,322807) (128,250567) (256,226295)
         };
       \addlegendentry{12 threads}
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput across version history sizes. The 12-thread curve rises monotonically
-    with history size as larger histories reduce false conflict aborts caused by commit-lock
-    queuing. Trim aborts remain zero throughout.}
+  \caption{Throughput across version history sizes at 50,000 transactions per thread. At 4
+    and 6 threads, throughput is flat across all history sizes. At 12 threads, throughput
+    declines at sizes 128 and 256 due to allocation pressure from maintaining large history
+    vectors. Trim aborts are zero throughout.}
   \label{fig:history-sweep}
 \end{figure}
 

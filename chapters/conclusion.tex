@@ -26,16 +26,19 @@ the average wait time for all threads. Replacing it with per-stripe commit locks
 fixed array of locks with write-sets hashed to stripes, would allow non-conflicting
 write transactions to commit in parallel.
 
-\paragraph{Bounded version history.}
-Version history is capped at 32 entries per reference by default. The history size sweep
-showed that throughput at 12 threads improves monotonically up to size 64, suggesting the
-default may be conservative under high concurrency. The apparent drop in conflict abort rate
-at size 64 is most likely attributable to sampling variance rather than a genuine effect of
-history size (Section~\ref{sec:history-sweep}); a longer run with more transactions per
-thread would be needed to confirm whether the trend is real. An alternative approach would
-replace the fixed bound entirely with a dynamic strategy that retains only versions newer
-than the minimum active read point $w_{\min}$ across all live transactions, eliminating
-unnecessary aborts while keeping memory use bounded.
+\paragraph{Dynamic version history sizing.}
+The benchmarks in Section~\ref{sec:history-sweep} reveal that a fixed global history bound is
+too coarse for production use. Under the sparse 20-account bank transfer workload, trim aborts
+never occur and history size is irrelevant to correctness across the entire range tested
+(8-256 slots). Under a workload that concentrates writes on fewer references, the same fixed
+bound would either exhaust the snapshot window and produce trim aborts, or waste memory by
+maintaining unnecessarily long histories. The right value is therefore not a single global
+constant but a per-reference adaptive parameter, as implemented
+in Clojure's own STM: each reference tracks its own trim-abort rate and grows its history
+when aborts are detected, then shrinks it again during GC when the pressure subsides. Adding
+per-reference adaptive sizing would eliminate the need to tune
+\texttt{max-history} manually and make the system robust across workloads with heterogeneous
+access patterns.
 
 \paragraph{Lifecycle hook granularity.}
 The current hook model exposes only \texttt{on-commit} and \texttt{on-rollback}.
