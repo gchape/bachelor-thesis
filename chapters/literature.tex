@@ -14,7 +14,7 @@ operated on by two atomic operations: P (\emph{passeren}, to pass) and V
 room for errors, as illustrated in Listing~\ref{lst:semaphore}.
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn transfer [from to amount]
   (.acquire (:lock from))
   (.acquire (:lock to))
@@ -31,8 +31,8 @@ room for errors, as illustrated in Listing~\ref{lst:semaphore}.
   (.release (:lock to))
   (.release (:lock from)))
 \end{minted}
-\caption{Explicit lock-based synchronization vulnerable to lock leakage under exceptions.}
-\label{lst:semaphore}
+  \caption{Explicit lock-based synchronization vulnerable to lock leakage under exceptions.}
+  \label{lst:semaphore}
 \end{listing}
 
 To address these limitations, Brinch Hansen and Hoare introduced
@@ -42,7 +42,7 @@ for \emph{condition variables} controlled by a wait/signal
 mechanism~\cite{hoare1974}.
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn transfer-safe [from to amount]
   (locking from
     (locking to
@@ -55,8 +55,8 @@ mechanism~\cite{hoare1974}.
       (set! (:balance to)   
             (+ (:balance to) amount)))))
 \end{minted}
-\caption{Monitor-style synchronization with automatic lock release (RAII-style locking).}
-\label{lst:monitor}
+  \caption{Monitor-style synchronization with automatic lock release (RAII-style locking).}
+  \label{lst:monitor}
 \end{listing}
 
 However, monitors do not eliminate all concurrency challenges. Coarse-grained
@@ -107,7 +107,7 @@ possibly applying \emph{adaptive backoff} under high
 contention~\cite{herlihy1993}.
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn transfer-htm [account-a account-b amount]
   (loop []
     (let [bal-a (LT account-a)
@@ -121,22 +121,22 @@ contention~\cite{herlihy1993}.
             (do (adaptive-backoff!) (recur))))
         (do (adaptive-backoff!) (recur))))))
 \end{minted}
-\caption{HTM-style transaction.}
+  \caption{HTM-style transaction.}
 \end{listing}
 
 Two conflict classes can cause \textsc{Validate} or \textsc{Commit} to fail:
 
 \begin{table}[h]
-\centering
-\begin{tabular}{ll}
-\hline
-\textbf{Conflict Type} & \textbf{Example} \\
-\hline
-Read-Write  & $T_1$ reads $A$;\ $T_2$ commits $W(A)$ \\
-Write-Write & $T_1$ and $T_2$ both attempt $W(B)$    \\
-\hline
-\end{tabular}
-\caption{Transaction conflict classes illustrated by the transfer example.}
+  \centering
+  \begin{tabular}{ll}
+    \hline
+    \textbf{Conflict Type} & \textbf{Example}                       \\
+    \hline
+    Read-Write             & $T_1$ reads $A$;\ $T_2$ commits $W(A)$ \\
+    Write-Write            & $T_1$ and $T_2$ both attempt $W(B)$    \\
+    \hline
+  \end{tabular}
+  \caption{Transaction conflict classes illustrated by the transfer example.}
 \end{table}
 
 \subsection{Software Transactional Memory}
@@ -151,7 +151,7 @@ transactional memory design moved toward transactions that are unbounded and
 dynamic.''~\cite{dice2006transactional}
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 ; Static: data set fixed before execution
 (defn transfer [account-a account-b amount]
   (dosync
@@ -163,7 +163,7 @@ dynamic.''~\cite{dice2006transactional}
   (let [node @head]
     (ref-set head @(:next node))))
 \end{minted}
-\caption{Static vs.\ dynamic transactions.}
+  \caption{Static vs.\ dynamic transactions.}
 \end{listing}
 
 Since the data set must be declared upfront, any transaction that discovers
@@ -196,8 +196,8 @@ accessed~\cite{bernstein1987}. Consider two concurrent transactions $T_1$ and
 $T_2$ updating shared variables $A$ and $B$:
 
 \begin{itemize}
-    \item $T_1$: $R(A)\ W(B)$
-    \item $T_2$: $W(A)\ W(B)$
+  \item $T_1$: $R(A)\ W(B)$
+  \item $T_2$: $W(A)\ W(B)$
 \end{itemize}
 
 These operations create both read-write ($R(A) \times W(A)$) and write-write
@@ -208,10 +208,10 @@ commit or rollback~\cite{bernstein1987}. This guarantees two correctness
 properties:
 
 \begin{enumerate}
-    \item If a transaction holds an s-lock on a data item, no other active
-          transaction may concurrently modify that item.
-    \item If a transaction holds an x-lock, no other active transaction may
-          access the protected data item.
+  \item If a transaction holds an s-lock on a data item, no other active
+        transaction may concurrently modify that item.
+  \item If a transaction holds an x-lock, no other active transaction may
+        access the protected data item.
 \end{enumerate}
 
 Although S2PL guarantees serializability, holding locks until transaction
@@ -242,12 +242,12 @@ $T_3$. $T_1$ commits at $t=3$ writing $O=20$, and $T_3$ commits at $t=11$
 writing $O=30$. A read-only transaction $T_2$ begins at $t=5$:
 
 \begin{enumerate}
-    \item $T_1$ commits, creating version $v_1$ with $\mathit{t}(v_1) = 3$.
-    \item $T_3$ commits, creating version $v_2$ with $\mathit{t}(v_2) = 11$.
-    \item $T_2$ begins at $t=5$ and reads $O$. It receives $v_1$ (value $=
+  \item $T_1$ commits, creating version $v_1$ with $\mathit{t}(v_1) = 3$.
+  \item $T_3$ commits, creating version $v_2$ with $\mathit{t}(v_2) = 11$.
+  \item $T_2$ begins at $t=5$ and reads $O$. It receives $v_1$ (value $=
           20$), the latest version committed before $t=5$, even though $T_3$
-          has already committed $v_2$. $T_2$ obtains a consistent read without
-          acquiring any lock.
+        has already committed $v_2$. $T_2$ obtains a consistent read without
+        acquiring any lock.
 \end{enumerate}
 
 Since read-only transactions have a consistent view of the data, they never
@@ -256,7 +256,7 @@ Clojure's adoption of MVCC for its STM system~\cite{clojure_refs} showed that
 MVCC could be effectively applied beyond database systems, influencing the
 design of the system in this thesis. The key design implication is that MVCC
 separates the concern of read consistency from the concern of write
-serialization, that makes MVCC well-suited to read-dominated workloads, and it 
+serialization, that makes MVCC well-suited to read-dominated workloads, and it
 is precisely the property exploited in
 Section~\ref{sec:read-write-heavy}, where 90\% read-only transactions achieve
 the highest throughput of any evaluated scenario by bypassing the commit lock
@@ -292,8 +292,8 @@ locks. If validation fails the transaction aborts and retries.
 Figure~\ref{fig:tl2-write} illustrates the complete write transaction protocol.
 
 \begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[
+  \centering
+  \begin{tikzpicture}[
     node distance = 0.65cm and 1.4cm,
     font = \sffamily\footnotesize,
     process/.style = {rectangle, minimum width=4.3cm, text width=3.9cm,
@@ -307,35 +307,35 @@ Figure~\ref{fig:tl2-write} illustrates the complete write transaction protocol.
         fill=orange!5, align=center},
     arrow/.style = {thick, -{Latex[scale=1.0]}},
     darrow/.style = {thick, dashed, draw=orange!70!black, -{Latex[scale=1.0]}}
-]
-\node (s1) [process] {\textbf{Sample version clock} \\
-    \textit{\scriptsize store as $rv$}};
-\node (s2) [process, below=of s1] {\textbf{Speculative execution} \\
-    \textit{\scriptsize build read-set, write-set}};
-\node (s3) [process, below=of s2] {\textbf{Lock write-set} \\
-    \textit{\scriptsize acquire per-object or stripe locks}};
-\node (s4) [process, below=of s3] {\textbf{Validate read-set} \\
-    \textit{\scriptsize all versions $\leq rv$?}};
-\node (s5) [process, below=of s4] {\textbf{Increment version clock} \\
-    \textit{\scriptsize store as $wv$}};
-\node (s6) [process, below=of s5] {\textbf{Apply writes + release locks} \\
-    \textit{\scriptsize stamp each location with $wv$}};
+    ]
+    \node (s1) [process] {\textbf{Sample version clock} \\
+      \textit{\scriptsize store as $rv$}};
+    \node (s2) [process, below=of s1] {\textbf{Speculative execution} \\
+      \textit{\scriptsize build read-set, write-set}};
+    \node (s3) [process, below=of s2] {\textbf{Lock write-set} \\
+      \textit{\scriptsize acquire per-object or stripe locks}};
+    \node (s4) [process, below=of s3] {\textbf{Validate read-set} \\
+      \textit{\scriptsize all versions $\leq rv$?}};
+    \node (s5) [process, below=of s4] {\textbf{Increment version clock} \\
+      \textit{\scriptsize store as $wv$}};
+    \node (s6) [process, below=of s5] {\textbf{Apply writes + release locks} \\
+      \textit{\scriptsize stamp each location with $wv$}};
 
-\node (chk) [inline, right=of s2] {\textbf{Inline check (per read)} \\
-    \textit{\scriptsize version $> rv \Rightarrow$ abort}};
-\node (ab1) [abort, right=of s4]  {\textbf{Abort + retry} \\
-    \textit{\scriptsize read-set invalid}};
+    \node (chk) [inline, right=of s2] {\textbf{Inline check (per read)} \\
+      \textit{\scriptsize version $> rv \Rightarrow$ abort}};
+    \node (ab1) [abort, right=of s4]  {\textbf{Abort + retry} \\
+      \textit{\scriptsize read-set invalid}};
 
-\draw [arrow]  (s1) -- (s2);
-\draw [arrow]  (s2) -- (s3);
-\draw [arrow]  (s3) -- (s4);
-\draw [arrow]  (s4) -- node[left]{\textit{pass}} (s5);
-\draw [arrow]  (s5) -- (s6);
-\draw [darrow] (s2) -- (chk);
-\draw [arrow]  (s4) -- node[above]{\textit{fail}} (ab1);
-\end{tikzpicture}
-\caption{TL2 write transaction protocol.}
-\label{fig:tl2-write}
+    \draw [arrow]  (s1) -- (s2);
+    \draw [arrow]  (s2) -- (s3);
+    \draw [arrow]  (s3) -- (s4);
+    \draw [arrow]  (s4) -- node[left]{\textit{pass}} (s5);
+    \draw [arrow]  (s5) -- (s6);
+    \draw [darrow] (s2) -- (chk);
+    \draw [arrow]  (s4) -- node[above]{\textit{fail}} (ab1);
+  \end{tikzpicture}
+  \caption{TL2 write transaction protocol.}
+  \label{fig:tl2-write}
 \end{figure}
 
 Read-only transactions bypass commit-time locking and read-set validation
@@ -367,11 +367,11 @@ architecture, dirty reads can effectively be excluded. Two primary concerns
 from Parri's taxonomy remain relevant:
 
 \begin{itemize}
-    \item \textbf{Non-Repeatable Read}: a transaction reads the same
-          location twice and observes different values.
-    \item \textbf{Intermediate Lost Update}: concurrent transactions modify
-          overlapping locations and one update is silently overwritten,
-          producing a result inconsistent with any serial execution.
+  \item \textbf{Non-Repeatable Read}: a transaction reads the same
+        location twice and observes different values.
+  \item \textbf{Intermediate Lost Update}: concurrent transactions modify
+        overlapping locations and one update is silently overwritten,
+        producing a result inconsistent with any serial execution.
 \end{itemize}
 
 Non-repeatable reads are prevented by the read-set caching introduced in
@@ -394,28 +394,28 @@ Table~\ref{tab:clojure-stm} summarizes the key internal components of
 \texttt{LockingTransaction} and \texttt{Ref}.
 
 \begin{table}[htbp]
-\centering
-\small
-\begin{tabular}{lll}
-\toprule
-\textbf{Component} & \textbf{Field} & \textbf{Role} \\
-\midrule
-\multirow{5}{*}{\texttt{LockingTransaction}}
-  & \texttt{startPoint}  & Globally unique transaction identifier \\
-  & \texttt{readPoint}   & Snapshot point for MVCC reads \\
-  & \texttt{vals}        & In-transaction buffered write values \\
-  & \texttt{sets}        & Refs modified via \texttt{alter}/\texttt{ref-set} \\
-  & \texttt{status}      & \texttt{RUNNING}, \texttt{COMMITTING},
-                           \texttt{COMMITTED}, \texttt{RETRY}, \texttt{KILLED} \\
-\midrule
-\multirow{3}{*}{\texttt{Ref}}
-  & \texttt{tvals}       & Doubly linked history of committed values \\
-  & \texttt{maxHistory}  & Upper bound on retained versions \\
-  & \texttt{tinfo}       & Reference to owning transaction's \texttt{Info} \\
-\bottomrule
-\end{tabular}
-\caption{Key internal fields of Clojure's STM implementation~\cite{jensen2016}.}
-\label{tab:clojure-stm}
+  \centering
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Component} & \textbf{Field}      & \textbf{Role}                                     \\
+    \midrule
+    \multirow{5}{*}{\texttt{LockingTransaction}}
+                       & \texttt{startPoint} & Globally unique transaction identifier            \\
+                       & \texttt{readPoint}  & Snapshot point for MVCC reads                     \\
+                       & \texttt{vals}       & In-transaction buffered write values              \\
+                       & \texttt{sets}       & Refs modified via \texttt{alter}/\texttt{ref-set} \\
+                       & \texttt{status}     & \texttt{RUNNING}, \texttt{COMMITTING},
+    \texttt{COMMITTED}, \texttt{RETRY}, \texttt{KILLED}                                          \\
+    \midrule
+    \multirow{3}{*}{\texttt{Ref}}
+                       & \texttt{tvals}      & Doubly linked history of committed values         \\
+                       & \texttt{maxHistory} & Upper bound on retained versions                  \\
+                       & \texttt{tinfo}      & Reference to owning transaction's \texttt{Info}   \\
+    \bottomrule
+  \end{tabular}
+  \caption{Key internal fields of Clojure's STM implementation~\cite{jensen2016}.}
+  \label{tab:clojure-stm}
 \end{table}
 
 A read inside a transaction calls \texttt{doGet}, which acquires a read lock

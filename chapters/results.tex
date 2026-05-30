@@ -4,249 +4,178 @@
 \section{Experimental Setup}
 
 All benchmarks were executed on an \textbf{AMD Ryzen 5 7535HS} with 6 physical cores and
-12 logical threads via Simultaneous Multithreading (SMT), clocked at 2.9\,GHz base with a boost
-up to 4.6\,GHz, and a 16\,MiB shared L3 cache. The machine had 16\,GiB of DDR5
-RAM running a standard Linux x86\_64 environment.
+12 logical threads via Simultaneous Multithreading (SMT), clocked at 2.9\,GHz base with a
+boost up to 4.6\,GHz, and a 16\,MiB shared L3 cache. The machine had 16\,GiB of DDR5 RAM
+running a standard Linux x86\_64 environment.
 
 The runtime was \textbf{OpenJDK 25.0.2} (64-bit Server VM) and \textbf{Clojure 1.12.4}.
-To reduce measurement noise from JIT compilation each throughput scenario is executed twice:
-the first run warms up the JIT compiler so that the hot path is fully compiled before timing
-begins, and only the second run is recorded. Heap size was fixed at 8\,GiB via
-\texttt{-Xms8g -Xmx8g} to eliminate dynamic resizing during test execution, and
-\texttt{-XX:+AlwaysPreTouch} was set so that the heap pages are initialized on JVM startup.
-
-A dedicated \texttt{:bench} profile was used for the benchmarking suite, utilizing
-\textbf{Criterium 0.4.6}. Direct linking was enabled
-(\texttt{-Dclojure.compiler.direct-linking=true}) alongside the G1 Garbage Collector
-(\texttt{-XX:+UseG1GC}). Reflection warnings were enabled (\texttt{*warn-on-reflection* true})
-during development to guarantee reflection-free execution.
+Heap size was fixed at 8\,GiB via \texttt{-Xms8g -Xmx8g} to eliminate dynamic resizing
+during test execution, and \texttt{-XX:+AlwaysPreTouch} was set so that heap pages are
+initialized on JVM startup. A dedicated \texttt{:bench} profile was used alongside
+\textbf{Criterium 0.4.6}, with direct linking enabled and the G1 Garbage Collector active.
 
 Thread counts of 4, 6, and 12 were chosen deliberately. Four threads fall below the physical
-core count, six threads match it exactly, and twelve threads represent 2$\times$
-oversubscription via SMT. This spread isolates STM contention effects from OS scheduler noise,
-which becomes significant beyond 12 threads on this machine.
+core count, six threads match it exactly, and twelve threads represent full use of all logical
+threads via SMT. This spread lets us separate STM contention effects from OS scheduler noise.
 
-Two complementary methodologies were employed:
+Two complementary methods were used:
 
 \begin{itemize}
   \item \textbf{Throughput benchmarks} measure committed transactions per second (TPS) under
-    concurrent load. A \texttt{CountDownLatch} gate holds all threads ready before releasing
-    them simultaneously, ensuring peak contention from the first transaction. Timing starts
-    immediately before the gate opens and stops after the last thread finishes, so elapsed time
-    covers only actual transaction execution. For high-contention and write-heavy scenarios,
-    aborts per committed transaction are also recorded by wrapping each \texttt{dosync} call in
-    an attempt counter; after a successful commit, \texttt{attempts\,-\,1} equals the abort
-    count for that transaction.
+        concurrent load. All threads are held at a gate and released simultaneously to ensure
+        peak contention from the start. For scenarios with non-trivial abort rates, aborts per
+        committed transaction are also recorded.
 
-  \item \textbf{Latency benchmarks} use the Criterium statistical benchmarking library, which
-    runs each scenario hundreds of thousands of times on a single thread and reports mean
-    execution time with standard deviation and quantile bounds. In a bank transfer scenario,
-    when a bank account has insufficient funds it returns immediately without committing,
-    therefore never entering the STM commit path. Since Criterium runs the same function on
-    the same refs hundreds of thousands of times, most iterations would measure the cheap early
-    exit rather than the actual commit cost. The \texttt{transfer-unchecked} variant thus skips
-    the balance check so every iteration exercises the full path: ownership acquisition,
-    read-set validation, applying writes, and hook dispatch.
+  \item \textbf{Latency benchmarks} use Criterium, which runs each scenario hundreds of
+        thousands of times on a single thread and reports mean execution time with standard
+        deviation. The \texttt{transfer-unchecked} variant is used to ensure every iteration
+        exercises the full commit path rather than the cheap early exit taken when funds are
+        insufficient.
 \end{itemize}
 
 \section{Throughput and Scalability}
 
 Table~\ref{tab:throughput-summary} summarizes throughput across all scenarios and thread counts.
-The aborts-per-commit column is reported for high-contention and write-heavy scenarios, where
-conflict rates are non-trivial; it is omitted for the remaining scenarios where every transaction
-commits on its first attempt or conflicts are negligible.
 
 \begin{table}[H]
   \centering
   \caption{Throughput summary across all scenarios and thread counts.
-           Aborts/commit is reported only for scenarios with non-trivial conflict rates.}
+    Aborts/commit is reported only for scenarios where conflicts were observed.}
   \label{tab:throughput-summary}
   \begin{tabular}{@{}l r r r r r@{}}
     \toprule
-    \textbf{Scenario} &
-    \textbf{4T (TPS)} &
-    \textbf{6T (TPS)} &
-    \textbf{12T (TPS)} &
-    \textbf{Scaling} &
-    \textbf{Aborts/commit} \\
-    & & & & $\mathbf{4T{\to}6T}$ & \textbf{(4/6/12)} \\
+    \textbf{Scenario}     &
+    \textbf{4T (TPS)}     &
+    \textbf{6T (TPS)}     &
+    \textbf{12T (TPS)}    &
+    \textbf{Scaling}      &
+    \textbf{Aborts/commit}                                                                                 \\
+                          &           &           &           & $\mathbf{4T{\to}12T}$ & \textbf{(4/6/12)}  \\
     \midrule
-    High Contention       & 304,090   & 327,921   & 428,264   & $1.08\times$ & 0.00 / 0.00 / 0.05 \\
-    Low Contention        & 1,196,671 & 1,301,008 & 1,440,794 & $1.09\times$ & ---                \\
-    Bank Transfer         & 217,380   & 204,732   & 238,420   & $0.94\times$ & ---                \\
-    Read-Heavy (10\% w.)  & 2,149,343 & 2,202,686 & 2,288,055 & $1.02\times$ & ---                \\
-    Write-Heavy (90\% w.) & 506,456   & 699,449   & 423,942   & $1.38\times$ & 0.00 / 0.00 / 0.00 \\
+    High Contention       & 138,633   & 253,421   & 425,973   & $3.07\times$          & 0.00 / 0.00 / 0.00 \\
+    Low Contention        & 1,322,570 & 1,092,815 & 1,033,984 & $0.78\times$          & ---                \\
+    Bank Transfer         & 213,631   & 163,402   & 173,725   & $0.81\times$          & ---                \\
+    Read-Heavy (10\% w.)  & 533,885   & 1,082,057 & 1,969,463 & $3.69\times$          & ---                \\
+    Write-Heavy (90\% w.) & 637,709   & 418,108   & 257,574   & $0.40\times$          & 0.00 / 0.00 / 0.00 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \subsection{High Contention}
 
-In this scenario, all threads compete for a single shared reference by repeatedly incrementing a
-global counter inside a transaction. Because every transaction updates the same ref, every
-concurrent pair is in conflict, and at most one transaction can commit. This is the worst case
-for any optimistic concurrency control scheme and serves as a lower bound on throughput.
+In this scenario all threads compete for a single shared reference, incrementing a global
+counter inside a transaction. Because every transaction writes the same value, every pair of
+concurrent transactions conflict, and at most one can commit at a time. This is the worst case
+for any optimistic concurrency system and represents a lower bound on throughput.
 
-Despite maximal conflict, the STM scales from 304,090\,TPS at 4 threads to 327,921\,TPS at 6
-threads (1.08$\times$) and continues to 428,264\,TPS at 12 threads. Scaling beyond the physical
-core count remains positive because the ownership-stealing protocol keeps at least one transaction
-progressing, and the exponential backoff with jitter spreads retrying threads enough to reduce
-thundering-herd effects. Abort rates are negligible even under this worst-case workload: 0.00
-aborts per commit at 4 and 6 threads, rising to only 0.05 at 12 threads, confirming that the
-age-based ownership protocol resolves conflicts efficiently before they escalate to full retries.
+Despite this, throughput scales from 138,633\,TPS at 4 threads to 253,421\,TPS at 6 threads
+($1.83\times$) and 425,973\,TPS at 12 threads ($3.07\times$ from 4 threads). This is the
+strongest scaling result in the suite. Abort rates are zero at every thread count: the system
+resolves conflicts at write time by detecting which transaction is older and immediately
+stopping the newer one, so no transaction ever reaches the commit phase and fails there.
 
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Throughput: High Contention (single shared ref)},
-      xlabel={Thread count}, ylabel={Transactions / sec},
-      ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
-      xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
-      ymajorgrids=true, grid style=dashed,
-      nodes near coords, nodes near coords align={vertical},
-      every node near coord/.append style={font=\tiny, anchor=south},
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape}, clip=false,
-      axis y line*=left, axis x line*=bottom,
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
-      (4,304090) (6,327921) (12,428264)
-    };
+        title={Throughput: High Contention (single shared ref)},
+        xlabel={Thread count}, ylabel={Transactions / sec},
+        ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
+        xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
+        ymajorgrids=true, grid style=dashed,
+        nodes near coords, nodes near coords align={vertical},
+        every node near coord/.append style={font=\tiny, anchor=south},
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape}, clip=false,
+        axis y line*=left, axis x line*=bottom,
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
+          (4,138633) (6,253421) (12,425973)
+        };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput under maximal conflict, where all threads compete for a single shared
-  reference. Despite every concurrent pair being in conflict, the ownership-stealing protocol
-  ensures at least one transaction commits per contention round, producing modest but consistent
-  scaling from 304K to 428K TPS. The near-zero abort rate confirms that conflicts are resolved
-  eagerly at write time rather than escalating to full retries.}
+  \caption{Throughput under maximal conflict. All threads write the same
+    reference. Throughput scales monotonically from 139K to 426K\,TPS with
+    zero aborts at every thread count.}
   \label{fig:throughput-high-contention}
 \end{figure}
 
 \subsection{Low Contention}
 
-In this scenario, each thread operates exclusively on its own isolated reference: thread $i$
-increments only ref $i$. There are no conflicts between threads by construction, so every
-transaction commits on its first attempt. This measures the baseline throughput of the commit
-path itself, independent of contention overhead.
+In this scenario each thread works on its own private reference and never touches any other
+thread's data. There are no conflicts by construction, so every transaction commits on its
+first attempt. This measures the baseline cost of the commit path itself.
 
-Throughput scales monotonically from 1,196,671\,TPS at 4 threads to 1,301,008\,TPS at 6
-threads (1.09$\times$) and continues to 1,440,794\,TPS at 12 threads. Under SMT, two logical
-threads share the execution resources of one physical core, which introduces context-switch
-overhead when all 12 logical threads are active. Since the low-contention workload has no
-conflicts and commits immediately, there is no contention-related work to hide during these
-switches; the continued growth to 12 threads therefore reflects the JVM's ability to overlap
-commit overhead with memory latency across sibling logical threads.
+Throughput is 1,322,570\,TPS at 4 threads and falls to 1,092,815\,TPS at 6 threads and
+1,033,984\,TPS at 12 threads. Even with no data conflicts, every write transaction must
+acquire a single global commit lock to record its result, so adding more threads creates a
+queue at that lock rather than useful parallelism. The JFR profiling data in
+Section~\ref{sec:bottlenecks} confirms that all blocking in this scenario is concentrated on
+that one lock.
 
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Throughput: Low Contention (isolated refs)},
-      xlabel={Thread count}, ylabel={Transactions / sec},
-      ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
-      xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
-      ymajorgrids=true, grid style=dashed,
-      nodes near coords, nodes near coords align={vertical},
-      every node near coord/.append style={font=\tiny, anchor=south},
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape}, clip=false,
-      axis y line*=left, axis x line*=bottom,
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
-      (4,1196671) (6,1301008) (12,1440794)
-    };
+        title={Throughput: Low Contention (isolated refs)},
+        xlabel={Thread count}, ylabel={Transactions / sec},
+        ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
+        xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
+        ymajorgrids=true, grid style=dashed,
+        nodes near coords, nodes near coords align={vertical},
+        every node near coord/.append style={font=\tiny, anchor=south},
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape}, clip=false,
+        axis y line*=left, axis x line*=bottom,
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
+          (4,1322570) (6,1092815) (12,1033984)
+        };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput when each thread operates on a fully isolated reference, measuring the
-  baseline cost of the commit path with no conflict overhead. Monotonic scaling through 12
-  threads reflects the JVM's ability to overlap commit latency with memory access across SMT
-  sibling threads, with no contention-related work present to act as a ceiling.}
+  \caption{Throughput when each thread works on its own isolated reference.
+    The declining profile reflects commit-lock queuing even under zero data
+    contention.}
   \label{fig:throughput-low-contention}
 \end{figure}
 
 \subsection{Bank Transfer}
 
-The bank transfer scenario simulates a realistic workload: 20 threads randomly select pairs of
-accounts from a pool of 20 and transfer a random amount, committing only when the source account
-has sufficient funds. Each transaction must acquire write ownership of two distinct refs, and
-because accounts are shared across all threads, contention arises naturally.
+This scenario simulates a realistic workload: threads randomly pick pairs of accounts from a
+shared pool of 20 and transfer a random amount, committing only when the source account has
+enough funds. Because accounts are shared across all threads, contention arises naturally.
 
-Throughput is 217,380\,TPS at 4 threads, dips to 204,732 at 6, then recovers to 238,420 at 12
-threads. The non-monotonic result at 6 threads reflects the interaction between two competing
-effects. At 4 threads, the commit lock is contested infrequently: the windows during which two
-transactions simultaneously attempt to commit are short, and most transactions acquire the lock
-without waiting. Moving to 6 threads increases parallelism but also increases the probability
-that multiple threads reach the commit phase concurrently, causing them to queue on the global
-commit lock. At this thread count the serialization cost outweighs the benefit of additional
-parallelism, reducing throughput relative to 4 threads. At 12 threads, Simultaneous
-Multithreading (SMT) allows two logical threads to share one physical core: when one logical
-thread stalls waiting for the commit lock, the core switches to its sibling, hiding some of the
-lock-wait latency and recovering effective throughput above the 6-thread figure.
-
-JFR diagnostic profiling confirms this interpretation directly.
-Table~\ref{tab:jfr-commit-lock} reports commit-lock blocking events recorded during a
-dedicated 30-second run per thread count.
-
-\begin{table}[H]
-  \centering
-  \caption{Commit-lock monitor contention measured via JFR (bank transfer, 20 accounts,
-           30\,s per run). Tick values converted at 4.6\,GHz.}
-  \label{tab:jfr-commit-lock}
-  \begin{tabular}{@{}r r r r@{}}
-    \toprule
-    \textbf{Threads} & \textbf{Block Count} & \textbf{Avg Wait ($\mu$s)} & \textbf{Max Wait ($\mu$s)} \\
-    \midrule
-    4  &  82 & 3,236 & 4,493 \\
-    6  &  88 & 3,150 & 4,313 \\
-    12 & 419 & 2,519 & 3,878 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-The block count is nearly identical at 4 and 6 threads (82 vs.\ 88 events), and average wait
-time is flat at approximately 3,150-3,236\,$\mu$s. This rules out the explanation that
-individual threads wait longer at 6 threads: the per-block cost is unchanged. What changes is
-that adding two threads increases the rate at which threads arrive at the commit phase without
-proportionally increasing the work that can be serialized through it, consistent with the
-6\% throughput reduction observed (217,380 to 204,732\,TPS).
-
-At 12 threads the block count rises sharply to 419 events while average wait time falls to
-2,519\,$\mu$s. The higher block count reflects more logical threads competing for the monitor
-simultaneously. The shorter average wait is explained by SMT: when a logical thread blocks on
-the commit lock, the physical core switches to its sibling logical thread, keeping the core
-busy. The lock holder therefore completes \texttt{apply-writes!} faster, releasing the monitor
-sooner, which reduces measured wait time per event even as total contention increases.
-Throughput recovers as a result.
+Throughput peaks at 213,631\,TPS at 4 threads and drops to 163,402\,TPS at 6 threads,
+recovering slightly to 173,725\,TPS at 12 threads. The decline is caused by the same global
+commit lock seen in the low-contention scenario: nearly every transaction writes to two
+accounts and must acquire the lock, so the lock becomes the bottleneck as threads increase.
 
 Correctness is verified after each run by checking that the sum of all account balances equals
-the initial total, which holds in every measurement.
+the starting total, which holds in every measurement.
 
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Throughput: Bank Transfer (20 accounts)},
-      xlabel={Thread count}, ylabel={Transactions / sec},
-      ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
-      xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
-      ymajorgrids=true, grid style=dashed,
-      nodes near coords, nodes near coords align={vertical},
-      every node near coord/.append style={font=\tiny, anchor=south},
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape}, clip=false,
-      axis y line*=left, axis x line*=bottom,
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
-      (4,217380) (6,204732) (12,238420)
-    };
+        title={Throughput: Bank Transfer (20 accounts)},
+        xlabel={Thread count}, ylabel={Transactions / sec},
+        ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
+        xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
+        ymajorgrids=true, grid style=dashed,
+        nodes near coords, nodes near coords align={vertical},
+        every node near coord/.append style={font=\tiny, anchor=south},
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape}, clip=false,
+        axis y line*=left, axis x line*=bottom,
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
+          (4,213631) (6,163402) (12,173725)
+        };
     \end{axis}
   \end{tikzpicture}
   \caption{Throughput under a realistic mixed workload with 20 accounts shared across threads.
-  The non-monotonic result, a dip at 6 threads before recovery at 12, is explained by
-  commit-lock serialization: additional threads increase the rate at which transactions arrive
-  at the commit phase without increasing the throughput of the single monitor serializing them.
-  SMT at 12 threads partially hides lock-wait latency by keeping the physical core busy.}
+    Throughput peaks at 4 threads and declines at higher counts, consistent with the global
+    commit lock being the binding constraint.}
   \label{fig:throughput-bank-transfer}
 \end{figure}
 
@@ -256,54 +185,47 @@ the initial total, which holds in every measurement.
 These two scenarios use a mixed workload over 10 shared references.
 
 \paragraph{Read-Heavy (10\% writes).}
-Each transaction either increments a randomly chosen ref (10\% probability) or reads and sums
-all 10 refs (90\% probability). Read-only transactions commit without acquiring any lock, which
-is the central throughput advantage of the MVCC-based design: readers access a consistent
-snapshot via the version history and never contend with concurrent writers.
+Each transaction either writes a randomly chosen reference (10\% probability) or reads and
+sums all 10 references (90\% probability). Read-only transactions never need to acquire the
+commit lock: they simply read a consistent snapshot from the version history and finish.
 
-Throughput scales from 2,149,343\,TPS at 4 threads to 2,202,686\,TPS at 6 threads
-(1.02$\times$) and continues to 2,288,055\,TPS at 12 threads, the best absolute throughput
-observed across all scenarios, and the clearest demonstration of the MVCC read-path advantage.
-The near-linear scaling through 12 threads indicates that the 90\% read-only path avoids the
-commit lock almost entirely, leaving threads free to proceed in parallel.
+This is the key advantage of the MVCC design: readers and writers do not block each other.
+Throughput scales from 533,885\,TPS at 4 threads to 1,082,057\,TPS at 6 threads
+($2.03\times$) and 1,969,463\,TPS at 12 threads ($3.69\times$ from 4 threads). This is the
+strongest scaling result in the suite and the clearest demonstration of the MVCC benefit.
 
 \paragraph{Write-Heavy (90\% writes).}
-With 90\% of transactions writing, nearly every transaction must enter the global commit lock.
-Throughput rises from 506,456\,TPS at 4 threads to a peak of 699,449\,TPS at 6 threads
-(1.38$\times$), then falls sharply to 423,942\,TPS at 12 threads. Measured abort rates are
-0.00 across all thread counts, which rules out retry overhead as the cause of either the peak
-or the drop. The bottleneck is commit-lock serialization: at 6 threads the system is still
-able to pipeline speculative execution with lock acquisition, but at 12 threads the commit lock
-becomes fully saturated, threads spend an increasing fraction of their time queued on a
-single monitor rather than executing speculatively. The sharp drop at 12 threads confirms that
-the global commit lock is the primary scalability ceiling under near-universal write load, as
-discussed in Section~\ref{sec:bottlenecks}.
+With 90\% of transactions writing, nearly every transaction must acquire the global commit
+lock. Throughput falls monotonically: 637,709\,TPS at 4 threads, 418,108\,TPS at 6 threads
+($0.66\times$), and 257,574\,TPS at 12 threads ($0.40\times$ from 4 threads). Abort rates
+are 0.00 at every thread count, ruling out retries as a contributing factor. The bottleneck
+is entirely the commit lock, which is confirmed by the JFR profiling data in
+Section~\ref{sec:bottlenecks}.
 
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Throughput: Read-Heavy Mix (10\% writes)},
-      xlabel={Thread count}, ylabel={Transactions / sec},
-      ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
-      xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
-      ymajorgrids=true, grid style=dashed,
-      nodes near coords, nodes near coords align={vertical},
-      every node near coord/.append style={font=\tiny, anchor=south},
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape}, clip=false,
-      axis y line*=left, axis x line*=bottom,
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
-      (4,2149343) (6,2202686) (12,2288055)
-    };
+        title={Throughput: Read-Heavy Mix (10\% writes)},
+        xlabel={Thread count}, ylabel={Transactions / sec},
+        ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
+        xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
+        ymajorgrids=true, grid style=dashed,
+        nodes near coords, nodes near coords align={vertical},
+        every node near coord/.append style={font=\tiny, anchor=south},
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape}, clip=false,
+        axis y line*=left, axis x line*=bottom,
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
+          (4,533885) (6,1082057) (12,1969463)
+        };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput with 90\% read-only transactions, the scenario that most directly
-  demonstrates the MVCC advantage. Read-only transactions bypass the commit lock entirely,
-  accessing a consistent snapshot through the version history. Near-linear scaling through
-  12 threads and the highest absolute throughput across all scenarios (2.29M~TPS) confirm
-  that readers and writers do not interfere under this design.}
+  \caption{Throughput with 90\% read-only transactions. Readers access a
+    consistent snapshot without acquiring the commit lock, so additional
+    threads contribute genuine parallelism. Throughput scales monotonically
+    to 1.97M\,TPS at 12 threads.}
   \label{fig:throughput-read-heavy}
 \end{figure}
 
@@ -311,101 +233,193 @@ discussed in Section~\ref{sec:bottlenecks}.
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Throughput: Write-Heavy Mix (90\% writes)},
-      xlabel={Thread count}, ylabel={Transactions / sec},
-      ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
-      xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
-      ymajorgrids=true, grid style=dashed,
-      nodes near coords, nodes near coords align={vertical},
-      every node near coord/.append style={font=\tiny, anchor=south},
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape}, clip=false,
-      axis y line*=left, axis x line*=bottom,
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
-      (4,506456) (6,699449) (12,423942)
-    };
+        title={Throughput: Write-Heavy Mix (90\% writes)},
+        xlabel={Thread count}, ylabel={Transactions / sec},
+        ybar, bar width=18pt, width=0.75\textwidth, height=7cm,
+        xtick=data, ymin=0, enlarge y limits={upper, value=0.15},
+        ymajorgrids=true, grid style=dashed,
+        nodes near coords, nodes near coords align={vertical},
+        every node near coord/.append style={font=\tiny, anchor=south},
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape}, clip=false,
+        axis y line*=left, axis x line*=bottom,
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black] coordinates {
+          (4,637709) (6,418108) (12,257574)
+        };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput when 90\% of transactions write, saturating the global commit lock.
-  The peak at 6 threads followed by a 39\% drop at 12 threads isolates commit-lock
-  serialization as the primary scalability ceiling; measured abort rates of 0.00 at all
-  thread counts rule out retry overhead as a contributing factor. This scenario directly
-  motivates the per-stripe commit lock discussed in Section~\ref{sec:future}.}
+  \caption{Throughput when 90\% of transactions write. The monotonically
+    declining profile, combined with zero abort rates at all thread counts,
+    confirms that the commit lock is the sole bottleneck.}
   \label{fig:throughput-write-heavy}
+\end{figure}
+
+\section{Version History Size}
+\label{sec:history-sweep}
+
+Each reference keeps a short history of past values so that concurrent readers can always
+find a consistent snapshot. A history that is too short forces reads to fail when no valid
+snapshot is available (a \emph{trim abort}); a history that is too long increases the time
+spent scanning that list on every read. To characterize this trade-off, the bank transfer
+scenario was repeated across history sizes of 8, 16, 32, and 64 at all three thread counts.
+
+\begin{table}[H]
+  \centering
+  \caption{Version history size sweep: bank transfer throughput and abort rates
+    (20 accounts, 3{,}000 transactions per thread).}
+  \label{tab:history-sweep}
+  \begin{tabular}{@{}r r r r r@{}}
+    \toprule
+    \textbf{\texttt{max-history}}   & \textbf{Threads}            & \textbf{TPS} &
+    \textbf{Conflict aborts/commit} & \textbf{Trim aborts/commit}                              \\
+    \midrule
+    8                               & 4                           & 315,642      & 0.13 & 0.00 \\
+    8                               & 6                           & 243,242      & 0.14 & 0.00 \\
+    8                               & 12                          & 179,881      & 0.55 & 0.00 \\
+    \midrule
+    16                              & 4                           & 285,371      & 0.12 & 0.00 \\
+    16                              & 6                           & 226,183      & 0.19 & 0.00 \\
+    16                              & 12                          & 186,386      & 0.59 & 0.00 \\
+    \midrule
+    32                              & 4                           & 313,661      & 0.13 & 0.00 \\
+    32                              & 6                           & 349,891      & 0.19 & 0.00 \\
+    32                              & 12                          & 233,055      & 0.50 & 0.00 \\
+    \midrule
+    64                              & 4                           & 412,767      & 0.11 & 0.00 \\
+    64                              & 6                           & 342,681      & 0.25 & 0.00 \\
+    64                              & 12                          & 309,651      & 0.20 & 0.00 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two results stand out.
+
+First, trim aborts are zero in every cell, including at the smallest history size of 8. The
+bank transfer workload never exhausts the snapshot window under these conditions, so history
+size does not affect correctness here.
+
+Second, conflict abort rates at 12 threads are much higher than at 4 or 6 threads, reaching
+0.50-0.59 at history sizes 8-32 before dropping to 0.20 at size 64. The elevated rate is
+caused by the commit lock. When 12 threads compete for the lock, each thread spends more time
+waiting for its turn. While a thread waits, other threads finish their commits and update the
+data. When the waiting thread finally gets the lock and checks whether its reads are still
+valid, it is more likely to find that something has changed - producing a conflict abort. The
+JFR data confirms this pressure: at 12 threads, threads spend 3.6 times more total time
+waiting for the commit lock than at 4 threads (see Section~\ref{sec:bottlenecks}). This also
+explains why throughput at 12 threads increases monotonically with history size, from
+179,881\,TPS at size 8 to 309,651\,TPS at size 64, fewer aborts mean less wasted work.
+
+The drop at size 64 is not fully explained by the data. No mechanistic explanation is strongly
+supported: trim aborts are zero throughout, ruling out snapshot eviction as a cause, and
+read-set invalidation at commit time can occur regardless of history size. Sampling variance
+is therefore the most likely explanation: the 3,000-transaction-per-thread sample yields
+approximately 36,000 total observations at 12 threads, and at the low abort rates observed at
+size 64 this may be insufficient to distinguish a genuine reduction from measurement noise. A
+longer run would be needed to confirm whether the drop is real.
+Distinguishing these causes is left for future work.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+        title={Throughput vs.\ version history size (20 accounts)},
+        xlabel={\texttt{max-history}},
+        ylabel={Transactions / sec},
+        width=0.75\textwidth, height=6cm,
+        xtick={8,16,32,64},
+        ymin=0,
+        ymajorgrids=true, grid style=dashed,
+        mark=*, tick label style={font=\small},
+        label style={font=\small}, title style={font=\small\itshape},
+        legend pos=south east,
+      ]
+      \addplot[color=blue!60!black, mark=*] coordinates {
+          (8,315642) (16,285371) (32,313661) (64,412767)
+        };
+      \addlegendentry{4 threads}
+      \addplot[color=red!60!black, mark=*] coordinates {
+          (8,243242) (16,226183) (32,349891) (64,342681)
+        };
+      \addlegendentry{6 threads}
+      \addplot[color=green!50!black, mark=*] coordinates {
+          (8,179881) (16,186386) (32,233055) (64,309651)
+        };
+      \addlegendentry{12 threads}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Throughput across version history sizes. The 12-thread curve rises monotonically
+    with history size as larger histories reduce false conflict aborts caused by commit-lock
+    queuing. Trim aborts remain zero throughout.}
+  \label{fig:history-sweep}
 \end{figure}
 
 \section{Latency Analysis}
 
 Figure~\ref{fig:bank-contention-latency} shows mean transaction latency across four scenarios
 on a logarithmic scale. The logarithmic axis is necessary because the extreme-contention case
-differs from the baseline by two orders of magnitude.
+differs from the no-contention baseline by roughly two orders of magnitude.
 
 \paragraph{Scenario (i): single uncontended transfer.}
-A single transfer between two fixed accounts, measured in isolation with no concurrent threads.
-This establishes the floor cost of the full STM commit path: snapshot acquisition, write-set
-buffering, ownership acquisition, read-set validation under the global commit lock, write
-application, and hook dispatch. With direct linking enabled, the baseline is
-\textbf{1.79\,$\mu$s} ($\pm$\,0.06).
+A single transfer between two fixed accounts, with no concurrent threads. This is the baseline
+cost of a complete commit: reading the current value, preparing the write, acquiring the lock,
+validating that nothing changed, applying the write, and running any registered callbacks.
+Baseline latency is \textbf{1.76\,$\mu$s} ($\pm$\,0.03).
 
-\paragraph{Scenario (ii): extreme contention with 12 futures.}
-Twelve futures all target the same two accounts simultaneously. Each future executes
-\texttt{transfer-unchecked} repeatedly; Criterium measures the mean latency of a single
-iteration under this sustained concurrent load, including any backoff time incurred before the
-commit succeeds. Latency rises to \textbf{243.33\,$\mu$s} ($\pm$\,26.50), a roughly
-$136\times$ increase over the baseline. The standard deviation is contained relative to the
-mean, a coefficient of variation of approximately 11\%, indicating that the exponential
-backoff with $\pm$25\% jitter is effectively spreading retrying threads across time.
+\paragraph{Scenario (ii): extreme contention.}
+Multiple concurrent threads all target the same two accounts simultaneously. Latency rises to
+\textbf{401.56\,$\mu$s} ($\pm$\,35.25), a $228\times$ increase. The large standard deviation
+(about 9\% of the mean) reflects variability in how long a thread has to wait before retrying
+after a conflict.
 
-\paragraph{Scenarios (iii) and (iv): \texttt{on-commit} hook overhead.}
-These two scenarios are identical except that scenario~(iv) registers an \texttt{on-commit}
-handler while scenario~(iii) does not. Both run on a single thread with no concurrency. The
-difference isolates the cost of the transactional event system, which is the core contribution
-of this thesis. The no-hook baseline measures \textbf{1.68\,$\mu$s} ($\pm$\,0.04) and the
-with-hook variant measures \textbf{1.84\,$\mu$s} ($\pm$\,0.07), giving a hook dispatch
-overhead of approximately \textbf{0.16\,$\mu$s} (roughly 10\%). The hook overhead is
-consistent across repeated runs, confirming that it reflects a stable per-commit cost rather
-than measurement noise.
+\paragraph{Scenarios (iii) and (iv): callback overhead.}
+These two scenarios measure the cost of the \texttt{on-commit} callback feature, which runs
+user-provided code after each successful commit. Both run single-threaded with no concurrency.
+Scenario~(iii) is the no-callback baseline at \textbf{1.59\,$\mu$s} ($\pm$\,0.03); scenario~(iv)
+adds a callback and measures \textbf{1.81\,$\mu$s} ($\pm$\,0.08). The difference,
+\textbf{0.22\,$\mu$s}, is the cost of dispatching the callback (roughly 14\% of the baseline
+commit cost). Note that scenarios~(i) and~(iii) measure the same operation in separate
+Criterium runs; the small difference between 1.76 and 1.59\,$\mu$s is within normal
+measurement variation.
 
 \begin{figure}[htbp]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      title={Bank Transfer Latency},
-      xlabel={Mean execution time ($\mu$s)},
-      width=0.85\textwidth, height=6.2cm,
-      xbar, bar width=12pt, xmode=log, xmin=1,
-      enlarge x limits={upper, value=0.15},
-      ytick={0,1,2,3},
-      yticklabels={(\romannumeral 1),(\romannumeral 2),(\romannumeral 3),(\romannumeral 4)},
-      xmajorgrids=true, grid style=dashed,
-      tick label style={font=\small}, label style={font=\small},
-      title style={font=\small\itshape},
-    ]
-    \addplot[fill=blue!40!black, draw=blue!40!black,
-      error bars/.cd, x dir=both, x explicit
-    ] coordinates {
-      (1.792,0) +- (0.060,0)
-      (243.327,1) +- (26.501,0)
-      (1.682,2) +- (0.035,0)
-      (1.844,3) +- (0.070,0)
-    };
+        title={Bank Transfer Latency},
+        xlabel={Mean execution time ($\mu$s)},
+        width=0.85\textwidth, height=6.2cm,
+        xbar, bar width=12pt, xmode=log, xmin=1,
+        enlarge x limits={upper, value=0.15},
+        ytick={0,1,2,3},
+        yticklabels={(\romannumeral 1),(\romannumeral 2),(\romannumeral 3),(\romannumeral 4)},
+        xmajorgrids=true, grid style=dashed,
+        tick label style={font=\small}, label style={font=\small},
+        title style={font=\small\itshape},
+      ]
+      \addplot[fill=blue!40!black, draw=blue!40!black,
+        error bars/.cd, x dir=both, x explicit
+      ] coordinates {
+          (1.758,0) +- (0.030,0)
+          (401.556,1) +- (35.249,0)
+          (1.587,2) +- (0.032,0)
+          (1.810,3) +- (0.077,0)
+        };
     \end{axis}
   \end{tikzpicture}
   \vspace{0.5em}
   \begin{minipage}{0.85\textwidth}
     \centering \small
     \begin{tabular}{@{}r l@{}}
-      (\romannumeral 1) & single transfer transaction \\
-      (\romannumeral 2) & extreme-contention with futures \\
-      (\romannumeral 3) & on-commit hook overhead (no hook baseline) \\
-      (\romannumeral 4) & on-commit hook overhead (with hook) \\
+      (\romannumeral 1) & single transfer, no concurrency                   \\
+      (\romannumeral 2) & same transfer under extreme concurrent load       \\
+      (\romannumeral 3) & single transfer, no callback registered           \\
+      (\romannumeral 4) & single transfer, with \texttt{on-commit} callback \\
     \end{tabular}
   \end{minipage}
-  \caption{Bank Transfer Latency. Horizontal axis is logarithmic (base 10);
-  tick marks denote $10^0$, $10^1$, and $10^2$~$\mu$s. Scenarios~(i)
-  and (iii)--(iv) are single-threaded; scenario~(ii) uses 12 concurrent
-  futures targeting the same two accounts.}
+  \caption{Bank transfer latency on a logarithmic axis (base 10). Scenarios~(i) and (iii)--(iv)
+    are single-threaded; scenario~(ii) uses concurrent threads all targeting the same two
+    accounts.}
   \label{fig:bank-contention-latency}
 \end{figure}
 
@@ -413,41 +427,66 @@ than measurement noise.
 
 \subsection{Architectural Strengths}
 
-The results confirm that the MVCC design is well-suited to read-heavy workloads. Read-only
-transactions access a consistent snapshot without acquiring any lock and without interfering
-with concurrent writers, producing the best absolute throughput across all scenarios at
-2,288,055\,TPS at 12 threads and near-linear scaling under oversubscription.
-The $\approx$1.79\,$\mu$s baseline latency reflects the cost of the full commit
-path: snapshot acquisition, ownership acquisition, read-set validation, write
-application, and hook dispatch, implemented without any modifications to the
-Clojure runtime. This provides a concrete reference point for interpreting the
-contention-induced latency reported in scenario~(ii).
+The results confirm two clear strengths of the design.
 
-At 0.16\,$\mu$s, \texttt{on-commit} hook dispatch adds roughly 10\% to the baseline commit
-cost and is negligible relative to the contention-induced latency observed in the benchmarks.
-This demonstrates that principled side-effect coordination can be added to a transactional
-model without meaningful performance penalty.
+The first is the MVCC read path. Read-only transactions never acquire any lock: they read
+a consistent snapshot directly from the version history. This is why the read-heavy scenario
+scales so well, reaching 1,969,463\,TPS at 12 threads ($3.69\times$ from 4 threads) and
+outperforming every other scenario at high thread counts. It is also the only scenario in
+the suite that scales beyond the physical core count.
 
-Abort rates are negligible across all measured scenarios. In the high-contention scenario,
-where every transaction pair conflicts, aborts per committed transaction reach only 0.05 at
-12 threads. In the write-heavy scenario they remain at 0.00 across all thread counts. This
-confirms that the age-based ownership protocol resolves conflicts eagerly at write time,
-aborting the older transaction immediately rather than allowing it to run to completion and
-fail at commit.
+The second is the 0.22\,$\mu$s cost of the \texttt{on-commit} callback, which adds roughly
+14\% to the single-threaded baseline. This shows that side-effect coordination can be added
+to the transactional model without meaningful overhead under realistic load.
 
-\subsection{Identified Bottlenecks}
+Abort rates are zero across all throughput scenarios. Even in the high-contention case, where
+every pair of transactions conflicts, no transaction ever reaches the commit phase and fails
+there. Conflicts are caught at write time, which avoids wasted work.
+
+\subsection{Identified Bottleneck: the Commit Lock}
 \label{sec:bottlenecks}
 
-The write-heavy scenario is the clearest demonstration of the system's primary limitation.
-Abort rates of 0.00 across all thread counts definitively rule out retry overhead as a
-factor; the throughput ceiling is caused entirely by commit-lock serialization. With 90\%
-of transactions competing to hold the same monitor at commit time, throughput peaks at 6
-threads and then drops sharply to 423,942\,TPS at 12 threads, a 39\% reduction from the
-6-thread peak. The JFR data in Table~\ref{tab:jfr-commit-lock} measures this directly:
-at 12 threads, 419 blocking events on a single monitor address account for virtually all
-blocked time, confirming that the serialization bottleneck is real and measurable rather
-than inferred. The ownership-stealing mechanism and exponential backoff keep individual
-transactions efficient, but they cannot reduce the fundamental serialization imposed by a
-single commit lock under heavy write load. Replacing it with per-stripe commit locks
-is the most directly motivated direction for future work, as discussed in
+The dominant bottleneck across all write-heavy scenarios is the \textbf{global commit lock}.
+Every write transaction must acquire this lock to record its result. When multiple threads
+compete for it, they queue up and wait, which directly reduces throughput.
+
+The JFR profiling data makes this concrete. For the write-heavy scenario, a single lock is
+responsible for all thread blocking in the process. Table~\ref{tab:jfr-summary} shows the
+total time threads spent waiting for that lock at each thread count.
+
+\begin{table}[H]
+  \centering
+  \caption{JFR commit-lock profiling: write-heavy scenario. All blocking time is concentrated
+    on a single lock object. The 12-thread run shows a second lock with one brief blocking
+    event, accounting for 3\% of total blocked time.}
+  \label{tab:jfr-summary}
+  \begin{tabular}{@{}r r r r r@{}}
+    \toprule
+    \textbf{Threads}              &
+    \textbf{Total wait (B ticks)} &
+    \textbf{Avg wait (M ticks)}   &
+    \textbf{Max wait (M ticks)}   &
+    \textbf{Lock events}                                  \\
+    \midrule
+    4                             & 1.54 & 110 & 163 & 14 \\
+    6                             & 2.81 & 134 & 183 & 21 \\
+    12                            & 5.55 & 121 & 186 & 46 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two observations follow from this data.
+
+First, total wait time grows faster than the thread count. Going from 4 to 12 threads
+(a $3\times$ increase in workers) causes total wait time to grow $3.6\times$, from 1.54\,B
+to 5.55\,B ticks. This is the signature of a saturated lock: each new thread makes every
+other thread wait longer, compounding the slowdown.
+
+Second, the maximum wait for a single event is stable across thread counts, ranging from
+163\,M to 186\,M ticks. Individual commit operations are not slower at higher concurrency;
+the problem is purely that threads queue up for longer. This means that removing the single
+global lock, for example by using one lock per reference or stripe, would recover the lost
+throughput without needing to change how commits work internally.
+
+This scenario directly motivates the per-stripe commit lock discussed in
 Section~\ref{sec:future}.

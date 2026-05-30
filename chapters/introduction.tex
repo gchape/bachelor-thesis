@@ -13,14 +13,14 @@ lead to non-deterministic and often unexpected outcomes.
 Consider a simple example in which two threads concurrently increment a shared counter:
 
 \begin{table}[ht]
-\centering
-\begin{tabular}{cc}
-\toprule
-\textbf{Thread 1} & \textbf{Thread 2} \\
-\midrule
-\texttt{ctr++} & \texttt{ctr++} \\
-\bottomrule
-\end{tabular}
+  \centering
+  \begin{tabular}{cc}
+    \toprule
+    \textbf{Thread 1} & \textbf{Thread 2} \\
+    \midrule
+    \texttt{ctr++}    & \texttt{ctr++}    \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
 \noindent At a high level, each increment appears atomic. On modern hardware, however,
@@ -28,16 +28,16 @@ it is typically implemented as a sequence of three steps: reading the value from
 incrementing it, and writing it back:
 
 \begin{table}[ht]
-\centering
-\begin{tabular}{cc}
-\toprule
-\textbf{Thread 1} & \textbf{Thread 2} \\
-\midrule
-$r_1 \gets \mathit{ctr}$       & $r_2 \gets \mathit{ctr}$       \\
-$r_1 \gets r_1 + 1$            & $r_2 \gets r_2 + 1$            \\
-$\mathit{ctr} \gets r_1$       & $\mathit{ctr} \gets r_2$       \\
-\bottomrule
-\end{tabular}
+  \centering
+  \begin{tabular}{cc}
+    \toprule
+    \textbf{Thread 1}        & \textbf{Thread 2}        \\
+    \midrule
+    $r_1 \gets \mathit{ctr}$ & $r_2 \gets \mathit{ctr}$ \\
+    $r_1 \gets r_1 + 1$      & $r_2 \gets r_2 + 1$      \\
+    $\mathit{ctr} \gets r_1$ & $\mathit{ctr} \gets r_2$ \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
 \noindent Since each thread performs three operations, the total number of possible
@@ -70,12 +70,12 @@ withdraw from one account and deposit into another. Both operations can be made
 individually atomic, but composing them is not straightforward:
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn transfer [from to amount]
   (withdraw from amount)   ; atomic
   (deposit to amount))     ; atomic, but not together
 \end{minted}
-\caption{Non-composable transfer}
+  \caption{Non-composable transfer}
 \end{listing}
 
 \noindent Between the two operations, another thread may observe an
@@ -83,13 +83,13 @@ inconsistent intermediate state. With STM, both operations are composed in a
 transaction and committed together atomically:
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn transfer [from to amount]
   (dosync
     (withdraw from amount)
     (deposit to amount)))
 \end{minted}
-\caption{Composable transfer with STM}
+  \caption{Composable transfer with STM}
 \end{listing}
 
 \noindent If any conflict occurs mid-execution, the entire transaction is
@@ -100,8 +100,8 @@ the programmer reasoning about lock ordering or failure scenarios.
 \section{Problem Statement}
 The Clojure STM documentation states that because transactions are retried on conflict, side-effecting operations are explicitly disallowed:
 \begin{quote}
-I/O and other activities with side-effects should be avoided in
-transactions, since transactions will be retried~\cite{clojure_refs}.
+  I/O and other activities with side-effects should be avoided in
+  transactions, since transactions will be retried~\cite{clojure_refs}.
 \end{quote}
 However, there are use cases where side-effects are inherent to the
 problem, such as logging state updates, sending notifications, or
@@ -113,13 +113,13 @@ The natural approach would be to extend Clojure's existing STM with
 side-effect-aware transaction lifecycle hooks, but extending the native STM
 is not straightforward. The core functionality is defined in
 \texttt{LockingTransaction.java} within the \texttt{clojure.lang} package,
-and the implementation methods \texttt{doGet}, \texttt{doSet}, and \texttt{run} 
+and the implementation methods \texttt{doGet}, \texttt{doSet}, and \texttt{run}
 carry package-private visibility, making them inaccessible outside the package.
 Prior work addressed this by forking the Clojure runtime~\cite{jensen2016} and
 adding extensions locally, but that couples the solution to
 a language runtime and increases maintenance burden.
 
-The result is a gap in Clojure's STM model: no mechanism exists for safely coordinating 
+The result is a gap in Clojure's STM model: no mechanism exists for safely coordinating
 side effects with transaction outcomes.
 
 \section{Project Approach}
@@ -131,7 +131,7 @@ The core transactional model is based on MVCC,
 where transactions execute speculatively and conflicts are resolved at
 commit time. This model is then extended with a transaction lifecycle
 event system, allowing side-effecting operations to be registered within a transaction
-and dispatched only after the outcome is determined. The result is exposed through a 
+and dispatched only after the outcome is determined. The result is exposed through a
 declarative public API that integrates naturally with idiomatic Clojure code.
 
 The proposed approach is guided by three objectives:
@@ -147,52 +147,52 @@ transactional operations are in the \texttt{opusdb.atomic.stm} namespace; lifecy
 are in \texttt{opusdb.atomic.tx-hooks}.
 
 \begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\textwidth}{@{} l l X @{}}
-\toprule
-\textbf{Function / Macro} & \textbf{Namespace} & \textbf{Description} \\
-\midrule
-\texttt{(ref \textit{initial-val})}
-    & \texttt{stm}
-    & Creates a new transactional reference with the given initial value. \\
-\texttt{(deref \textit{r})}
-    & \texttt{stm}
-    & Reads reference \textit{r} within the current transaction, or directly
-      if called outside one. \\
-\texttt{(ref-set \textit{r} \textit{v})}
-    & \texttt{stm}
-    & Buffers a write of value \textit{v} to reference \textit{r};
-      must be called inside \texttt{dosync}. \\
-\texttt{(dosync \&\ \textit{body})}
-    & \texttt{stm}
-    & Executes \textit{body} atomically. Retries on conflict; composes with
-      enclosing transactions via flat nesting. \\
-\texttt{(on-commit \textit{handler})}
-    & \texttt{tx-hooks}
-    & Registers \textit{handler} to be called exactly once after the
-      enclosing transaction commits. \\
-\texttt{(on-rollback \textit{handler})}
-    & \texttt{tx-hooks}
-    & Registers \textit{handler} to be called on each abort of the
-      enclosing transaction, before retry. \\
-\bottomrule
-\end{tabularx}
-\caption{Public API of the proposed STM system.}
-\label{tab:public-api}
+  \centering
+  \renewcommand{\arraystretch}{1.4}
+  \begin{tabularx}{\textwidth}{@{} l l X @{}}
+    \toprule
+    \textbf{Function / Macro} & \textbf{Namespace}                                                     & \textbf{Description} \\
+    \midrule
+    \texttt{(ref \textit{initial-val})}
+                              & \texttt{stm}
+                              & Creates a new transactional reference with the given initial value.                           \\
+    \texttt{(deref \textit{r})}
+                              & \texttt{stm}
+                              & Reads reference \textit{r} within the current transaction, or directly
+    if called outside one.                                                                                                    \\
+    \texttt{(ref-set \textit{r} \textit{v})}
+                              & \texttt{stm}
+                              & Buffers a write of value \textit{v} to reference \textit{r};
+    must be called inside \texttt{dosync}.                                                                                    \\
+    \texttt{(dosync \&\ \textit{body})}
+                              & \texttt{stm}
+                              & Executes \textit{body} atomically. Retries on conflict; composes with
+    enclosing transactions via flat nesting.                                                                                  \\
+    \texttt{(on-commit \textit{handler})}
+                              & \texttt{tx-hooks}
+                              & Registers \textit{handler} to be called exactly once after the
+    enclosing transaction commits.                                                                                            \\
+    \texttt{(on-rollback \textit{handler})}
+                              & \texttt{tx-hooks}
+                              & Registers \textit{handler} to be called on each abort of the
+    enclosing transaction, before retry.                                                                                      \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Public API of the proposed STM system.}
+  \label{tab:public-api}
 \end{table}
 
 \noindent A typical usage combining all six entry points is shown in
 Listing~\ref{lst:api-example}.
 
 \begin{listing}[ht]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (dosync
   (let [bal (deref account)]
     (ref-set account (- bal amount))
     (on-commit  #(log/info "Transfer committed"))
     (on-rollback #(log/warn "Transfer retried"))))
 \end{minted}
-\caption{Typical usage of the public API: transactional transfer with lifecycle hooks.}
-\label{lst:api-example}
+  \caption{Typical usage of the public API: transactional transfer with lifecycle hooks.}
+  \label{lst:api-example}
 \end{listing}

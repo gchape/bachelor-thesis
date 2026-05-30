@@ -28,7 +28,7 @@ ownership immediately rather than deferring to commit.
 
 TL2 maintains only the current committed value of each location. The
 proposed implementation extends this with \emph{Multi-Version Concurrency
-Control (MVCC)}~\cite{bernstein1983}, maintaining a bounded version history
+  Control (MVCC)}~\cite{bernstein1983}, maintaining a bounded version history
 per reference. This allows concurrent readers to access consistent snapshots
 without blocking writers, which is discussed in detail in
 Section~\ref{sec:mvcc-design}.
@@ -38,40 +38,43 @@ The system is implemented in the \texttt{opusdb.atomic.stm} namespace. Four
 global data structures coordinate all transactional activity:
 
 \begin{description}
-    \item[\texttt{write-point}] A globally shared \texttt{AtomicLong}
-          acting as the version clock. It is incremented atomically on every
-          successful write-transaction commit, establishing a total order over
-          all committed states.
-    \item[\texttt{tx-counter}] A monotonically increasing
-          \texttt{AtomicLong} that assigns unique identifiers to transactions.
-          The strict ordering of these identifiers forms the basis of the
-          age-based ownership protocol.
-    \item[\texttt{active-tx}] A \texttt{ConcurrentHashMap} mapping live
-          transaction IDs to their transaction maps, used by
-          \texttt{try-acquire!} to locate and abort the owner of a conflicting
-          reference.
-    \item[\texttt{commit-lock}] A single global \texttt{Object} monitor
-          that serializes the commit phase of all write transactions, ensuring
-          that read-set validation and write application are atomic with
-          respect to one another.
+  \item[\texttt{write-point}] A globally shared \texttt{AtomicLong}
+        acting as the version clock. It is incremented atomically on every
+        successful write-transaction commit, establishing a total order over
+        all committed states.
+  \item[\texttt{tx-counter}] A monotonically increasing
+        \texttt{AtomicLong} that assigns unique identifiers to transactions.
+        The strict ordering of these identifiers forms the basis of the
+        age-based ownership protocol.
+  \item[\texttt{active-tx}] A \texttt{ConcurrentHashMap} mapping live
+        transaction IDs to their transaction maps, used by
+        \texttt{try-acquire!} to locate and abort the owner of a conflicting
+        reference.
+  \item[\texttt{commit-lock}] A single global \texttt{Object} monitor
+        that serializes the commit phase of all write transactions, ensuring
+        that read-set validation and write application are atomic with
+        respect to one another. The single global lock was chosen over
+        per-stripe alternatives to simplify the opacity proof and provide a
+        performance baseline; its cost is characterized in Section~5.5.2 and
+        addressed as future work in Section~6.2.
 \end{description}
 
 Four constants govern system behaviour:
 
 \begin{description}
-    \item[\texttt{max-history} (16)] The maximum number of committed
-          versions retained per reference. Older entries are discarded on
-          commit, bounding per-reference memory use.
-    \item[\texttt{max-retries} (96)] The maximum number of times a
-          transaction is retried before the system throws unconditionally,
-          preventing livelock. The value of 96 was
-          chosen conservatively: at the maximum backoff of 32\,ms per retry, 96
-          retries represent about 2--3 seconds of cumulative delay, which is long
-          enough that a transaction still failing at that point is almost certainly in livelock rather than waiting on a genuinely slow but progressing system.
-    \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] The
-          lower and upper bounds of the exponential backoff delay applied
-          after the fourth retry. Backoff is capped at 32\,ms to keep
-          worst-case latency bounded.
+  \item[\texttt{max-history} (32)] The maximum number of committed
+        versions retained per reference. Older entries are discarded on
+        commit, bounding per-reference memory use.
+  \item[\texttt{max-retries} (96)] The maximum number of times a
+        transaction is retried before the system throws unconditionally,
+        preventing livelock. The value of 96 was
+        chosen conservatively: at the maximum backoff of 32\,ms per retry, 96
+        retries represent about 2--3 seconds of cumulative delay, which is long
+        enough that a transaction still failing at that point is almost certainly in livelock rather than waiting on a genuinely slow but progressing system.
+  \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] The
+        lower and upper bounds of the exponential backoff delay applied
+        after the fourth retry. Backoff is capped at 32\,ms to keep
+        worst-case latency bounded.
 \end{description}
 
 The current transaction is bound to the dynamic thread-local variable
@@ -85,7 +88,7 @@ value together with its version history and ownership metadata into a single
 Clojure \texttt{atom}:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn ref [initial-val]
   (let [wp    (.get write-point)
         entry {:value initial-val :write-point wp}]
@@ -95,9 +98,9 @@ Clojure \texttt{atom}:
            :owner       nil
            :lock        (Object.)})))
 \end{minted}
-\caption{Reference structure. Each ref stores its current value, write
-point, version history, current owner, and a per-ref monitor lock.}
-\label{lst:ref-structure}
+  \caption{Reference structure. Each ref stores its current value, write
+    point, version history, current owner, and a per-ref monitor lock.}
+  \label{lst:ref-structure}
 \end{listing}
 
 The \texttt{:history} vector stores all committed versions as
@@ -108,23 +111,127 @@ intrinsic monitor avoids the allocation overhead of a separate
 \texttt{ReentrantLock}, since every JVM object already carries a monitor in its
 header.
 
-Version history is bounded by \texttt{max-history = 16}. When a commit appends
+Version history is bounded by \texttt{max-history = 32}. When a commit appends
 a new entry that would exceed this bound, \texttt{trim-history} discards the
 oldest entry:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- trim-history [history]
   (if (> (count history) max-history)
     (vec (take-last max-history history))
     history))
 \end{minted}
-\caption{History trimming. Oldest versions are discarded to prevent
-unbounded memory growth.}
-\label{lst:trim-history}
+  \caption{History trimming. Oldest versions are discarded to prevent
+    unbounded memory growth.}
+  \label{lst:trim-history}
 \end{listing}
 
 \section{Transaction Lifecycle}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    font=\sffamily\small,
+    every node/.style={align=center},
+    N/.style={
+        rectangle, rounded corners=3pt,
+        draw=black!45, fill=gray!8,
+        minimum width=3.4cm, minimum height=0.72cm,
+        text width=3.2cm},
+    D/.style={N, draw=blue!50!black, fill=blue!7},
+    OK/.style={N, draw=teal!55!black, fill=teal!8},
+    AB/.style={N, draw=red!48!black,  fill=red!7},
+    T/.style={N, draw=black!55, fill=gray!16,
+        font=\sffamily\small\bfseries},
+    a/.style={-{Stealth[scale=0.75]}, thick},
+    d/.style={-{Stealth[scale=0.75]}, thick, dashed, draw=gray!55},
+    ]
+    \def\lx{-4.2}
+    \def\cx{0}
+    \def\rx{4.2}
+    \def\loopx{-7.0}
+    \def\routeR{7.4}
+    \def\readonlyL{-2.2}
+
+    \node[T]  (s)  at (\cx,   0.0) {dosync};
+    \node[N]  (mt) at (\cx,  -1.8) {make-tx\\
+    {\scriptsize snapshot write-point,\\register in active-tx}};
+    \node[N]  (bf) at (\cx,  -4.0) {execute body-fn\\
+    {\scriptsize check-active! per op\\
+    try-acquire! on write\\
+    build read/write sets}};
+    \node[D]  (oc) at (\cx,  -6.2) {outcome?};
+    \node[D]  (we) at (\cx,  -8.0) {write-set empty?};
+
+    \node[N]  (al) at (\rx,  -9.8) {acquire commit-lock\\
+    {\scriptsize re-check status}};
+    \node[N]  (vr) at (\rx, -11.8) {validate-reads!\\
+    {\scriptsize versions $\leq$ write-point?}};
+    \node[N]  (aw) at (\rx, -13.8) {apply-writes!\\
+    {\scriptsize increment write-point,\\stamp + append versions}};
+    \node[N]  (rl) at (\rx, -15.6) {release commit-lock};
+    \node[OK] (cm) at (\cx, -17.4) {tx/commit!\\
+    {\scriptsize dispatch on-commit hooks}};
+
+    \node[AB] (rb) at (\lx,  -6.2) {tx/rollback!\\
+    {\scriptsize dispatch on-rollback hooks}};
+    \node[N]  (bk) at (\lx,  -8.6) {backoff\\
+    {\scriptsize exponential + jitter}};
+    \node[D]  (mr) at (\lx, -10.4) {retries $\geq$ 96?};
+    \node[AB] (th) at (\lx, -12.2) {throw\\
+    {\scriptsize "STM exceeded max retries"}};
+
+    \draw[a] (s)  -- (mt);
+    \draw[a] (mt) -- (bf);
+    \draw[a] (bf) -- (oc);
+    \draw[a] (oc) -- node[right, font=\scriptsize\itshape]{ok} (we);
+
+    \draw[a] (we.west)
+    -- node[above, font=\scriptsize\itshape]{yes}
+    (\readonlyL,-8.0)
+    -- (\readonlyL,-17.4)
+    -- (cm.west);
+
+    \draw[a] (we.east)
+    -- node[above, font=\scriptsize\itshape]{no}
+    (\rx,-8.0)
+    -- (al.north);
+    \draw[a] (al) -- (vr);
+    \draw[a] (vr) -- node[right, font=\scriptsize\itshape]{pass} (aw);
+    \draw[a] (aw) -- (rl);
+    \draw[a] (rl.south) -- (\rx,-16.5) -- (cm.east);
+
+    \draw[d] (vr.east)
+    -- node[right, font=\scriptsize\itshape]{fail}
+    (\routeR,-11.8)
+    -- (\routeR,-6.2)
+    -- (oc.east);
+
+    \draw[a] (oc.west)
+    -- node[above, font=\scriptsize\itshape]{abort}
+    (rb.east);
+    \draw[a] (rb) -- (bk);
+    \draw[a] (bk) -- (mr);
+    \draw[a] (mr) -- node[right, font=\scriptsize\itshape]{yes} (th);
+
+    \draw[a] (mr.west)
+    -- node[above, font=\scriptsize\itshape]{no}
+    (\loopx,-10.4)
+    -- (\loopx,-4.0)
+    -- (bf.west);
+
+  \end{tikzpicture}
+  \caption{Transaction execution flow. The speculative phase builds read/write
+    sets, checking liveness and acquiring ownership on each write; on success
+    the commit path validates and applies writes under the commit lock
+    (read-only transactions bypass the commit lock entirely); on failure the
+    abort path dispatches rollback hooks, backs off, and retries with a fresh
+    snapshot.}
+  \label{fig:tx-flow}
+\end{figure}
+
+The following subsections describe each phase in detail.
 
 \subsection{Creation}
 
@@ -134,7 +241,7 @@ Each transaction is created by \texttt{make-tx}, which atomically increments
 and registers the transaction in \texttt{active-tx}:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- make-tx [retry-count]
   (let [id (.incrementAndGet tx-counter)
         tx {:id          id
@@ -146,9 +253,9 @@ and registers the transaction in \texttt{active-tx}:
     (.put active-tx id tx)
     tx))
 \end{minted}
-\caption{Transaction creation. The read point is snapshotted at creation
-time, defining the consistent view of memory this transaction will observe.}
-\label{lst:make-tx}
+  \caption{Transaction creation. The read point is snapshotted at creation
+    time, defining the consistent view of memory this transaction will observe.}
+  \label{lst:make-tx}
 \end{listing}
 
 Both the read-set and write-set use \texttt{IdentityHashMap}, which uses reference-equality
@@ -172,7 +279,7 @@ read-set validation later compares against.
 \texttt{deref} resolves a reference value through three ordered lookups:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn deref [target-ref]
   (if-not *tx*
     (:value @target-ref)
@@ -194,28 +301,26 @@ read-set validation later compares against.
           (when-not snapshot (abort))
           (.put read-set target-ref snapshot)
           (:value snapshot))))))
-\end{minted}
-\caption{Transactional read. The write-set is checked first to provide
-read-your-writes semantics; the history is consulted last.}
-\label{lst:deref}
+  \end{minted}
+  \caption{Transactional read. The write-set is checked first for
+    read-your-writes semantics; the read-set returns the previously cached
+    snapshot; the version history is consulted last.}
+  \label{lst:deref}
 \end{listing}
 
-The write-set is checked first to provide read-your-writes semantics: a
-transaction that has buffered a write to a reference must observe its own
-buffered value on subsequent reads. The read-set is checked second to return
-the previously snapshotted value without re-scanning the history. If neither
-set contains the reference, \texttt{find-entry} performs a newest-first scan of
-the version history, returning the latest entry whose write point does not
-exceed the transaction's read point. If no such entry exists, because the
-transaction's history has already been trimmed, the transaction aborts immediately.
-
+The write-set is checked first to provide read-your-writes semantics; the
+read-set is checked second, returning the value cached when the reference was
+first resolved, avoiding a redundant history scan. If neither set contains the
+reference, \texttt{find-entry} scans the version history newest-first, returning
+the latest entry whose write point does not exceed \texttt{read-point}; if none
+exists, the transaction aborts immediately.
 \subsection{Writing}
 
 \texttt{ref-set} buffers a write into the transaction's write set, first
 acquiring ownership of the target reference via \texttt{try-acquire!}:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn ref-set [target-ref new-val]
   (when-not *tx*
     (throw (IllegalStateException. "ref-set outside transaction")))
@@ -226,9 +331,9 @@ acquiring ownership of the target reference via \texttt{try-acquire!}:
     (.put ^IdentityHashMap (:write-set tx) target-ref new-val)
     new-val))
 \end{minted}
-\caption{Transactional write. Ownership must be acquired before buffering;
-failure to acquire triggers an immediate abort.}
-\label{lst:ref-set}
+  \caption{Transactional write. Ownership must be acquired before buffering;
+    failure to acquire triggers an immediate abort.}
+  \label{lst:ref-set}
 \end{listing}
 
 \subsection{Committing}
@@ -241,7 +346,7 @@ ownership theft that could have occurred while waiting, validate the read set, a
 apply writes:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- commit! [tx]
   (check-active! tx)
   (let [{:keys [id read-set write-set status]} tx]
@@ -254,9 +359,9 @@ apply writes:
     (.remove active-tx id)
     (tx/commit! id)))
 \end{minted}
-\caption{Commit protocol. Read-only transactions skip the commit lock;
-write transactions validate reads before installing writes.}
-\label{lst:commit}
+  \caption{Commit protocol. Read-only transactions skip the commit lock;
+    write transactions validate reads before installing writes.}
+  \label{lst:commit}
 \end{listing}
 
 \texttt{apply-writes!} increments \texttt{write-point} once, then stamps all
@@ -264,7 +369,7 @@ written references with the resulting commit point and appends them to their
 respective version histories:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- apply-writes! [^IdentityHashMap write-set]
   (let [commit-point (.incrementAndGet write-point)]
     (doseq [[r new-val] write-set]
@@ -278,9 +383,9 @@ respective version histories:
                                             {:value       new-val
                                              :write-point commit-point}))))))))
 \end{minted}
-\caption{Write application. A single increment of the global write point
-timestamps all writes in a commit atomically.}
-\label{lst:apply-writes}
+  \caption{Write application. A single increment of the global write point
+    timestamps all writes in a commit atomically.}
+  \label{lst:apply-writes}
 \end{listing}
 
 \subsection{Retry and Backoff}
@@ -307,7 +412,7 @@ retry attempts across time; the $32\,\text{ms}$ cap ensures worst-case per-retry
 remains bounded regardless of contention level.
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- next-tx [current]
   (tx/rollback! (:id current))
   (.remove active-tx (:id current))
@@ -325,9 +430,9 @@ remains bounded regardless of contention level.
         (Thread/sleep (max 0 (long (+ base jitter))))))
     (make-tx (inc retries))))
 \end{minted}
-\caption{Retry with bounded exponential backoff. The four-retry grace period
-avoids sleep overhead for short-lived conflicts.}
-\label{lst:next-tx}
+  \caption{Retry with bounded exponential backoff. The four-retry grace period
+    avoids sleep overhead for short-lived conflicts.}
+  \label{lst:next-tx}
 \end{listing}
 
 \subsection{The dosync Macro}
@@ -337,7 +442,7 @@ transaction is already active on the current thread; if not, \texttt{run-tx}
 is called to begin a new transaction loop:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn sync [body-fn]
   (if *tx*
     (body-fn)
@@ -346,112 +451,11 @@ is called to begin a new transaction loop:
 (defmacro dosync [& body]
   `(sync (fn* [] ~@body)))
 \end{minted}
-\caption{The \texttt{dosync} macro delegates to \texttt{sync}, which joins
-an existing transaction if one is active, or starts a new one via
-\texttt{run-tx}.}
-\label{lst:dosync}
+  \caption{The \texttt{dosync} macro delegates to \texttt{sync}, which joins
+    an existing transaction if one is active, or starts a new one via
+    \texttt{run-tx}.}
+  \label{lst:dosync}
 \end{listing}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-    font=\sffamily\small,
-    every node/.style={align=center},
-    N/.style={
-        rectangle, rounded corners=3pt,
-        draw=black!45, fill=gray!8,
-        minimum width=3.4cm, minimum height=0.72cm,
-        text width=3.2cm},
-    D/.style={N, draw=blue!50!black, fill=blue!7},
-    OK/.style={N, draw=teal!55!black, fill=teal!8},
-    AB/.style={N, draw=red!48!black,  fill=red!7},
-    T/.style={N, draw=black!55, fill=gray!16,
-              font=\sffamily\small\bfseries},
-    a/.style={-{Stealth[scale=0.75]}, thick},
-    d/.style={-{Stealth[scale=0.75]}, thick, dashed, draw=gray!55},
-]
-\def\lx{-4.2}
-\def\cx{0}
-\def\rx{4.2}
-\def\loopx{-7.0}
-\def\routeR{7.4}
-\def\readonlyL{-2.2}
-
-\node[T]  (s)  at (\cx,   0.0) {dosync};
-\node[N]  (mt) at (\cx,  -1.8) {make-tx\\
-    {\scriptsize snapshot write-point,\\register in active-tx}};
-\node[N]  (bf) at (\cx,  -4.0) {execute body-fn\\
-    {\scriptsize check-active! per op\\
-     try-acquire! on write\\
-     build read/write sets}};
-\node[D]  (oc) at (\cx,  -6.2) {outcome?};
-\node[D]  (we) at (\cx,  -8.0) {write-set empty?};
-
-\node[N]  (al) at (\rx,  -9.8) {acquire commit-lock\\
-    {\scriptsize re-check status}};
-\node[N]  (vr) at (\rx, -11.8) {validate-reads!\\
-    {\scriptsize versions $\leq$ write-point?}};
-\node[N]  (aw) at (\rx, -13.8) {apply-writes!\\
-    {\scriptsize increment write-point,\\stamp + append versions}};
-\node[N]  (rl) at (\rx, -15.6) {release commit-lock};
-\node[OK] (cm) at (\cx, -17.4) {tx/commit!\\
-    {\scriptsize dispatch on-commit hooks}};
-
-\node[AB] (rb) at (\lx,  -6.2) {tx/rollback!\\
-    {\scriptsize dispatch on-rollback hooks}};
-\node[N]  (bk) at (\lx,  -8.6) {backoff\\
-    {\scriptsize exponential + jitter}};
-\node[D]  (mr) at (\lx, -10.4) {retries $\geq$ 96?};
-\node[AB] (th) at (\lx, -12.2) {throw\\
-    {\scriptsize "STM exceeded max retries"}};
-
-\draw[a] (s)  -- (mt);
-\draw[a] (mt) -- (bf);
-\draw[a] (bf) -- (oc);
-\draw[a] (oc) -- node[right, font=\scriptsize\itshape]{ok} (we);
-
-\draw[a] (we.west)
-    -- node[above, font=\scriptsize\itshape]{yes}
-    (\readonlyL,-8.0)
-    -- (\readonlyL,-17.4)
-    -- (cm.west);
-
-\draw[a] (we.east)
-    -- node[above, font=\scriptsize\itshape]{no}
-    (\rx,-8.0)
-    -- (al.north);
-\draw[a] (al) -- (vr);
-\draw[a] (vr) -- node[right, font=\scriptsize\itshape]{pass} (aw);
-\draw[a] (aw) -- (rl);
-\draw[a] (rl.south) -- (\rx,-16.5) -- (cm.east);
-
-\draw[d] (vr.east)
-    -- node[right, font=\scriptsize\itshape]{fail}
-    (\routeR,-11.8)
-    -- (\routeR,-6.2)
-    -- (oc.east);
-
-\draw[a] (oc.west)
-    -- node[above, font=\scriptsize\itshape]{abort}
-    (rb.east);
-\draw[a] (rb) -- (bk);
-\draw[a] (bk) -- (mr);
-\draw[a] (mr) -- node[right, font=\scriptsize\itshape]{yes} (th);
-
-\draw[a] (mr.west)
-    -- node[above, font=\scriptsize\itshape]{no}
-    (\loopx,-10.4)
-    -- (\loopx,-4.0)
-    -- (bf.west);
-
-\end{tikzpicture}
-\caption{Transaction execution flow. The speculative phase builds read/write
-sets, checking liveness and acquiring ownership on each write; on success the
-commit path validates and applies writes under the commit lock (read-only
-transactions bypass the commit lock entirely); on failure the abort path
-dispatches rollback hooks, backs off, and retries with a fresh snapshot.}
-\label{fig:tx-flow}
-\end{figure}
 
 \paragraph{Nested transaction semantics.}
 When \texttt{dosync} is called on a thread that already has an active transaction bound
@@ -475,10 +479,14 @@ from initial snapshot acquisition through commit or abort and retry.
 
 Conflicts are resolved eagerly at write time via \texttt{try-acquire!}, which
 claims ownership of a reference under that reference's per-ref monitor. The
-resolution follows an age-based ownership protocol:
+resolution follows an age-based ownership protocol that favors younger
+transactions (higher identifier) over older ones: when two transactions
+conflict, the older owner is aborted and the younger claimer proceeds. The
+\texttt{max-retries} bound in Section~4.2 prevents a long-running transaction
+from being preempted indefinitely.
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- try-acquire! [target-ref tx]
   (let [claimer-id (:id tx)
         lock       (:lock @target-ref)]
@@ -500,9 +508,9 @@ resolution follows an age-based ownership protocol:
       (finally
         (monitor-exit lock)))))
 \end{minted}
-\caption{Ownership acquisition. Younger transactions claim ownership and
-abort the older owner, which retries.}
-\label{lst:try-acquire}
+  \caption{Ownership acquisition. Younger transactions claim ownership and
+    abort the older owner, which retries.}
+  \label{lst:try-acquire}
 \end{listing}
 
 Four cases arise. If the reference has no owner, the claiming transaction
@@ -526,11 +534,11 @@ reference. Each history entry records a committed value together with the write
 point at which it was committed. On a successful commit at write point $w_c$,
 the history of each written reference undergoes the transition:
 \[
-  \text{hist}_{\text{new}}(r) = \text{trim}_{16}\!\left(
-    \text{hist}_{\text{old}}(r) \cup \bigl\{ (w_c,\; WS[r]) \bigr\}
+  \text{hist}_{\text{new}}(r) = \text{trim}_{32}\!\left(
+  \text{hist}_{\text{old}}(r) \cup \bigl\{ (w_c,\; WS[r]) \bigr\}
   \right)
 \]
-where $\text{trim}_{16}$ discards the oldest entry if the cardinality exceeds
+where $\text{trim}_{32}$ discards the oldest entry if the cardinality exceeds
 \texttt{max-history}.
 
 A transaction with read point $w_r$ retrieves the value of reference $r$ via
@@ -538,7 +546,7 @@ A transaction with read point $w_r$ retrieves the value of reference $r$ via
 the first entry whose write point does not exceed $w_r$:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn- find-entry [read-point history]
   (loop [i (dec (count history))]
     (when (>= i 0)
@@ -547,18 +555,18 @@ the first entry whose write point does not exceed $w_r$:
           entry
           (recur (dec i)))))))
 \end{minted}
-\caption{Version history scan. Newest-first traversal returns the latest
-version visible at the transaction's read point.}
-\label{lst:find-entry}
+  \caption{Version history scan. Newest-first traversal returns the latest
+    version visible at the transaction's read point.}
+  \label{lst:find-entry}
 \end{listing}
 
 This design eliminates read-write conflicts between non-overlapping
 transactions: a reader at $w_r$ and a concurrent writer committing at $w_c >
-w_r$ do not conflict, because the reader accesses a snapshot predating the
+  w_r$ do not conflict, because the reader accesses a snapshot predating the
 write. Readers therefore never block writers and writers never block readers,
 preserving the throughput advantages of MVCC under read-dominated workloads.
 
-The history bound of 16 is a fixed, memory-efficient bound. A transaction
+The history bound of 32 is a default. A transaction
 whose read point predates the oldest retained entry finds no valid snapshot and
 aborts immediately, retrying with a fresh read point that reflects the current
 state of memory.
@@ -576,7 +584,7 @@ registers a handler to be dispatched on each abort, enabling cleanup prior to
 re-execution:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn on-commit [handler]
   (if *tx*
     (tx/on-commit (:id *tx*) handler)
@@ -587,16 +595,16 @@ re-execution:
     (tx/on-rollback (:id *tx*) handler)
     (throw (IllegalStateException. "on-rollback outside transaction"))))
 \end{minted}
-\caption{Hook registration. Handlers are associated with a transaction ID
-and dispatched at the appropriate lifecycle event.}
-\label{lst:hook-registration}
+  \caption{Hook registration. Handlers are associated with a transaction ID
+    and dispatched at the appropriate lifecycle event.}
+  \label{lst:hook-registration}
 \end{listing}
 
 The underlying implementation maintains two \texttt{ConcurrentHashMap} instances,
 one for commit handlers and one for rollback handlers, indexed by transaction ID:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (def ^:private ^ConcurrentHashMap COMMIT_EVENTS   (ConcurrentHashMap.))
 (def ^:private ^ConcurrentHashMap ROLLBACK_EVENTS (ConcurrentHashMap.))
 
@@ -608,8 +616,8 @@ one for commit handlers and one for rollback handlers, indexed by transaction ID
   (.compute ROLLBACK_EVENTS id
             (fn [_ fns] (conj (or fns []) fun))))
 \end{minted}
-\caption{Core event tables and handler accumulation.}
-\label{lst:event-tables}
+  \caption{Core event tables and handler accumulation.}
+  \label{lst:event-tables}
 \end{listing}
 
 The \texttt{compute} method appends handlers without explicit locking, since
@@ -617,7 +625,7 @@ The \texttt{compute} method appends handlers without explicit locking, since
 \texttt{commit!} and \texttt{rollback!}:
 
 \begin{listing}[H]
-\begin{minted}{clojure}
+  \begin{minted}{clojure}
 (defn commit! [id]
   (when-let [fns (.remove COMMIT_EVENTS id)]
     (doseq [f fns] (f))
@@ -627,19 +635,6 @@ The \texttt{compute} method appends handlers without explicit locking, since
   (when-let [fns (.remove ROLLBACK_EVENTS id)]
     (doseq [f fns] (f))))
 \end{minted}
-\caption{Dispatch at commit and rollback boundaries.}
-\label{lst:dispatch}
+  \caption{Dispatch at commit and rollback boundaries.}
+  \label{lst:dispatch}
 \end{listing}
-
-The exactly-once guarantee for commit handlers depends on two properties working
-together. First, \texttt{.remove} is atomic: it extracts and clears the handler
-list in a single operation, so if two threads were somehow racing to dispatch the
-same transaction, only one would receive a non-nil result; the other would
-receive \texttt{nil}, and \texttt{when-let} would not execute the dispatch body
-at all. Second, each retry attempt receives a fresh transaction identifier from
-the monotonically increasing \texttt{tx-counter}. Handlers registered during a
-failed attempt are indexed by that attempt's ID; when \texttt{rollback!} fires,
-\texttt{.remove} extracts and dispatches those rollback handlers and they are
-gone. The next attempt registers its own handlers under a new ID entirely. There
-is therefore no path by which a handler registered in attempt $k$ can be
-dispatched at the commit of attempt $k+1$.

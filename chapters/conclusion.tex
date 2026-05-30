@@ -4,14 +4,14 @@
 This thesis presented the design, formal analysis, and implementation of
 an MVCC-based Software Transactional Memory system in Clojure, inspired by the
 Transactional Locking II~\cite{dice2006transactional} algorithm. The system
-was shown to satisfy opacity~\cite{guerraoui2007}, 
+was shown to satisfy opacity~\cite{guerraoui2007},
 and was extended with a transactional event
 system that supports side effects at commit and rollback boundaries.
-Evaluation showed strong throughput under read-heavy workloads and good
+Evaluation showed strong throughput under read-heavy workloads and monotonic
 scalability under high contention, while write-heavy workloads revealed
 commit-lock serialization as the primary bottleneck. The transactional event
-system introduced negligible overhead of approximately $0.16\,\mu s$, roughly
-10\% of the baseline commit cost, demonstrating that side-effect
+system introduced negligible overhead of approximately $0.22\,\mu s$, roughly
+14\% of the baseline commit cost, demonstrating that side-effect
 coordination can be added to a transactional model without meaningful
 performance penalty.
 
@@ -20,22 +20,22 @@ performance penalty.
 
 \paragraph{Global commit lock.}
 Write transactions are serialized through a single global commit lock, which the
-write-heavy evaluation identified as the primary throughput bottleneck. While the lock did
-not saturate under the evaluated workloads, it represents a hard ceiling under
-significantly higher write concurrency. Replacing it with per-stripe commit locks, a
+write-heavy evaluation identified as the primary throughput bottleneck. Under high write
+concurrency the lock saturates: each additional thread increases the queue depth and
+the average wait time for all threads. Replacing it with per-stripe commit locks, a
 fixed array of locks with write-sets hashed to stripes, would allow non-conflicting
-write transactions to commit in parallel, at the cost of occasional false conflicts
-between transactions that hash to the same stripe.
+write transactions to commit in parallel.
 
 \paragraph{Bounded version history.}
-Version history is capped at 16 entries per reference. This bound was chosen as a
-pragmatic, memory-efficient default; a reference updated frequently under high concurrency
-may evict older versions before a slower transaction can read them at its snapshot point,
-forcing a retry even though no true write conflict occurred. A dynamic strategy would
-instead track the minimum active read point $w_{\min}$ across all live transactions and
-retain only versions newer than this threshold. This eliminates unnecessary aborts from
-history trimming while keeping memory use bounded by the span between $w_{\min}$ and the
-current write point.
+Version history is capped at 32 entries per reference by default. The history size sweep
+showed that throughput at 12 threads improves monotonically up to size 64, suggesting the
+default may be conservative under high concurrency. The apparent drop in conflict abort rate
+at size 64 is most likely attributable to sampling variance rather than a genuine effect of
+history size (Section~\ref{sec:history-sweep}); a longer run with more transactions per
+thread would be needed to confirm whether the trend is real. An alternative approach would
+replace the fixed bound entirely with a dynamic strategy that retains only versions newer
+than the minimum active read point $w_{\min}$ across all live transactions, eliminating
+unnecessary aborts while keeping memory use bounded.
 
 \paragraph{Lifecycle hook granularity.}
 The current hook model exposes only \texttt{on-commit} and \texttt{on-rollback}.

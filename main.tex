@@ -27,6 +27,8 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem*{remark}{Remark}
 
 \SetupFloatingEnvironment{listing}{name=Listing}
 \newcommand{\listoflistingsname}{List of Listings}
@@ -47,38 +49,38 @@
 \onehalfspacing
 
 \begin{titlepage}
-\thispagestyle{empty}
-\centering
+  \thispagestyle{empty}
+  \centering
 
-{\fontsize{14}{17}\selectfont
-  Kutaisi International University \\[4pt]
-  School of Computer Science       \\[4pt]
-  Bachelor of Computer Science     \par}
+  {\fontsize{14}{17}\selectfont
+    Kutaisi International University \\[4pt]
+    School of Computer Science       \\[4pt]
+    Bachelor of Computer Science     \par}
 
-\vspace{2cm}
-{\fontsize{16}{20}\selectfont\bfseries
-  Giorgi Chapidze \par}
+  \vspace{2cm}
+  {\fontsize{16}{20}\selectfont\bfseries
+    Giorgi Chapidze \par}
 
-\vspace{2cm}
-{\fontsize{16}{20}\selectfont\bfseries
-  Design and Evaluation of an MVCC-Based STM in Clojure \par}
+  \vspace{2cm}
+  {\fontsize{16}{20}\selectfont\bfseries
+    Design and Evaluation of an MVCC-Based STM in Clojure \par}
 
-\vspace{3cm}
-{\fontsize{14}{17}\selectfont
-  The thesis is completed for obtaining the academic degree of \\[4pt]
-  Bachelor of Computer Science \par}
+  \vspace{3cm}
+  {\fontsize{14}{17}\selectfont
+    The thesis is completed for obtaining the academic degree of \\[4pt]
+    Bachelor of Computer Science \par}
 
-\vspace{3.5cm}
-{\fontsize{12}{15}\selectfont
-  Bachelor's Thesis Supervisor \\[6pt]
-  Zaal Beriashvili             \\[4pt]
-  Lecturer                     \\[14pt]
-  Bachelor's Thesis Co-Supervisor \\[6pt]
-  Dr.\ Markus Neuhauser           \\[4pt]
-  Professor \par}
+  \vspace{3.5cm}
+  {\fontsize{12}{15}\selectfont
+    Bachelor's Thesis Supervisor \\[6pt]
+    Zaal Beriashvili             \\[4pt]
+    Lecturer                     \\[14pt]
+    Bachelor's Thesis Co-Supervisor \\[6pt]
+    Dr.\ Markus Neuhauser           \\[4pt]
+    Professor \par}
 
-\vfill
-{\fontsize{12}{15}\selectfont Kutaisi, 2026 \par}
+  \vfill
+  {\fontsize{12}{15}\selectfont Kutaisi, 2026 \par}
 \end{titlepage}
 
 \pagenumbering{roman}
@@ -109,10 +111,10 @@ write conflicts eagerly by transaction age, and maintains a bounded version hist
 The system is shown to satisfy opacity, guaranteeing that every transaction,
 including aborted ones, always observes a consistent state.
 
-Evaluation demonstrates strong throughput under read-heavy workloads, peaking at
-2,288,055 transactions per second at twelve threads, and good scalability under high
+Evaluation demonstrates throughput peaking at 1,969,463 transactions per second
+at twelve threads under read-heavy workloads, with monotonic scaling under high
 contention. The transactional event system introduces an overhead of approximately
-$0.16\,\mu\text{s}$ per commit, roughly 10\% of the baseline commit cost,
+$0.22\,\mu\text{s}$ per commit, roughly 14\% of the baseline commit cost,
 demonstrating that side-effect coordination can be added to a transactional model
 without meaningful performance penalty.
 
