@@ -50,7 +50,7 @@ critical section at a time. Locks and monitors are among the most widely used
 approaches for enforcing such guarantees.
 
 While lock-based synchronization preserves correctness, reasoning about
-fine-grained synchronization is notoriously difficult in practice. Locks
+fine-grained locking is notoriously difficult in practice. Locks
 must be manually acquired and released, and as systems grow in complexity,
 guarding state-mutating operations and preserving invariants in the
 presence of exceptions becomes increasingly error-prone. Exceptions in
