@@ -7,11 +7,14 @@ shared state modifications in the presence of interleaving execution. This
 necessitates synchronization mechanisms to constrain how threads access shared
 state.
 
-Dijkstra~\cite{dijkstra1968} introduced semaphores as a low-level
-primitive for guarding critical sections. A semaphore is a non-negative integer
-operated on by two atomic operations: P (\emph{passeren}, to pass) and V
-(\emph{vrijgeven}, to release), which provide granular access control but leave
-room for programming errors, as illustrated in Listing~\ref{lst:semaphore}.
+Dijkstra~\cite{dijkstra1968} introduced semaphores as a low-level primitive
+for guarding critical sections. A semaphore is a non-negative integer operated
+on by two atomic operations: P (\emph{passeren}, to pass) and V
+(\emph{vrijgeven}, to release). Because P and V are independent calls with
+nothing enforcing their pairing, it is easy to accidentally omit one.
+Moreover, every exit from a critical section, whether normal or
+exceptional, requires manually releasing all acquired semaphores; failing
+to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -36,10 +39,12 @@ room for programming errors, as illustrated in Listing~\ref{lst:semaphore}.
 \end{listing}
 
 To address these limitations, Brinch Hansen and Hoare introduced
-monitors~\cite{hoare1974}, which automatically release locks when execution
-exits scope, including during exceptional control flow, and provide support
-for \emph{condition variables} controlled by a wait/signal
-mechanism~\cite{hoare1974}.
+monitors~\cite{hoare1974}. A monitor automatically acquires its lock on
+entry and releases it on exit, whether the exit is a normal \texttt{return}
+or an exception, eliminating the risk of lock leakage. Monitors also enable threads to 
+safely wait for conditions on shared state
+through \emph{condition variables}, whose wait/signal mechanism implicitly
+releases and reacquires the monitor lock~\cite{hoare1974}.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -55,7 +60,7 @@ mechanism~\cite{hoare1974}.
       (set! (:balance to)   
             (+ (:balance to) amount)))))
 \end{minted}
-  \caption{Monitor-style synchronization with automatic lock release (RAII-style locking).}
+  \caption{Monitor-style synchronization with automatic lock release.}
   \label{lst:monitor}
 \end{listing}
 

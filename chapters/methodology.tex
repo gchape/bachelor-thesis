@@ -326,7 +326,7 @@ not just committed ones.
   $w_c(T_i) < w_r(T_j)$. By Step~2, $T_i$ precedes $T_j$ in $S$.
 
   \paragraph{Step 4: Every transaction is legal.}
-  Every transaction in $S$---whether committed, aborted, commit-pending, or
+  Every transaction in $S$, whether committed, aborted, commit-pending, or
   live, reads exclusively via $\mathit{snap}(r, w_r(T))$, so the position
   constructed in Step~2 is exactly what Lemma~\ref{lem:snapshot-legal}
   requires. It remains only to verify the precondition for committed

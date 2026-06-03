@@ -17,7 +17,7 @@
   number  = {10},
   pages   = {549--557},
   year    = {1974},
-  doi     = {10.1145/361161.361180}
+  doi     = {10.1145/355620.361161}
 }
 
 @article{lomet1977,
@@ -28,11 +28,11 @@
   number  = {3},
   pages   = {128--137},
   year    = {1977},
-  doi     = {10.1145/390016.808319}
+  doi     = {10.1145/800022.808319}
 }
 
 @article{haerder1983,
-  author    = {Theo Haerder and Andreas Reuter},
+  author    = {Theo H{\"a}rder and Andreas Reuter},
   title     = {Principles of transaction-oriented database recovery},
   journal   = {ACM Computing Surveys},
   volume    = {15},
@@ -44,7 +44,7 @@
 
 @article{bernstein1983,
   author  = {Philip A. Bernstein and Nathan Goodman},
-  title   = {Multiversion Concurrency Control --- Theory and Algorithms},
+  title   = {Multiversion Concurrency Control{---}Theory and Algorithms},
   journal = {ACM Transactions on Database Systems},
   volume  = {8},
   number  = {4},
@@ -54,7 +54,7 @@
 }
 
 @book{bernstein1987,
-  author    = {Philip A. Bernstein and Vassco Hadzilacos and Nathan Goodman},
+  author    = {Philip A. Bernstein and Vassos Hadzilacos and Nathan Goodman},
   title     = {Concurrency Control and Recovery in Database Systems},
   publisher = {Addison-Wesley},
   year      = {1987},
@@ -65,6 +65,7 @@
   author    = {Maurice Herlihy and J. Eliot B. Moss},
   title     = {Transactional Memory: Architectural Support for Lock-Free Data Structures},
   booktitle = {Proceedings of the 20th Annual International Symposium on Computer Architecture (ISCA)},
+  publisher = {ACM},
   pages     = {289--300},
   year      = {1993},
   doi       = {10.1145/165123.165164}
@@ -74,23 +75,27 @@
   author    = {Nir Shavit and Dan Touitou},
   title     = {Software Transactional Memory},
   booktitle = {Proceedings of the 14th Annual ACM Symposium on Principles of Distributed Computing (PODC)},
+  publisher = {ACM},
   pages     = {204--213},
   year      = {1995},
   doi       = {10.1145/224964.224987}
 }
 
-@techreport{parri_tm_intro,
-  author      = {Jonathan Parri},
-  title       = {An Introduction to Transactional Memory},
-  institution = {University of Ottawa},
-  year        = {2010},
-  url         = {https://www.site.uottawa.ca/~mbolic/elg7187/JonathanTransactionalMemoryReport.pdf}
+@misc{parriTmIntro,
+  author       = {Jonathan Parri},
+  title        = {An Introduction to Transactional Memory},
+  howpublished = {Technical report, University of Ottawa},
+  year         = {2010},
+  url          = {https://www.site.uottawa.ca/~mbolic/elg7187/JonathanTransactionalMemoryReport.pdf},
+  note         = {Accessed: May 2026}
 }
 
 @inproceedings{dice2006transactional,
   author    = {Dave Dice and Ori Shalev and Nir Shavit},
   title     = {Transactional Locking II},
   booktitle = {Proceedings of the 20th International Symposium on Distributed Computing (DISC)},
+  publisher = {Springer},
+  series    = {Lecture Notes in Computer Science},
   pages     = {194--208},
   year      = {2006},
   doi       = {10.1007/11864219_14}
@@ -103,7 +108,7 @@
   number      = {LPD-REPORT-2007-004},
   year        = {2007},
   url         = {https://infoscience.epfl.ch/entities/publication/90c3a27e-a0e8-45ab-aecb-57b71def4b9d}
-}^
+}
 
 @inproceedings{jensen2016,
   author    = {S{\o}ren Kejser Jensen and Lone Leth Thomsen},
@@ -114,18 +119,18 @@
   doi       = {10.5555/3005729.3005737}
 }
 
-@misc{clojure_refs,
-  author       = {{Clojure}},
+@misc{clojureRefs,
+  organization = {Clojure},
   title        = {Refs and Transactions},
-  note         = {Accessed: May 2026},
   year         = {n.d.},
-  url          = {https://clojure.org/reference/refs}
+  url          = {https://clojure.org/reference/refs},
+  note         = {Accessed: May 2026}
 }
 
 @misc{chapidze2026opusdb,
-  author = {Giorgi Chapidze},
-  title  = {OpusDB},
-  year   = {2026},
-  url    = {https://github.com/gchape/opusdb/tree/feature/stm},
-  note   = {Accessed: May 2026}
+  author       = {Giorgi Chapidze},
+  title        = {OpusDB},
+  year         = {2026},
+  howpublished = {\url{https://github.com/gchape/opusdb/tree/feature/stm}},
+  note         = {Accessed: May 2026}
 }
