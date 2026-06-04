@@ -1,50 +1,42 @@
 \chapter{Conclusion}
 
 \section{Summary}
-This thesis presented the design, formal analysis, and implementation of
-an MVCC-based Software Transactional Memory system in Clojure, inspired by the
-Transactional Locking II~\cite{dice2006transactional} algorithm. The system
-was shown to satisfy opacity~\cite{guerraoui2007},
-and was extended with a transactional event
-system that supports side effects at commit and rollback boundaries.
-Evaluation showed strong throughput under read-heavy workloads and monotonic
-scalability under high contention, while write-heavy workloads revealed
-commit-lock serialization as the primary bottleneck. The transactional event
-system introduced negligible overhead of approximately $0.22\,\mu s$, roughly
-14\% of the baseline commit cost, demonstrating that side-effect
-coordination can be added to a transactional model without meaningful
-performance penalty.
+This thesis presented the design and implementation of
+a Software Transactional Memory system in Clojure that supports
+side-effect handling at commit and rollback boundaries. The system
+was shown to satisfy opacity~\cite{guerraoui2007}. Evaluation showed strong throughput
+under read-heavy workloads and scalable performance under high contention,
+whilst write-heavy workloads revealed commit-lock serialization as the primary bottleneck.
+The transactional event system added negligible overhead of approximately $0.22\,\mu s$,
+roughly 14\% of the baseline commit cost, suggesting that side-effect
+handling can be added to a transactional model without meaningful performance penalty.
 
 \section{Limitations and Future Work}
 \label{sec:future}
 
 \paragraph{Global commit lock.}
-Write transactions are serialized through a single global commit lock, which the
-write-heavy evaluation identified as the primary throughput bottleneck. Under high write
-concurrency the lock saturates: each additional thread increases the queue depth and
-the average wait time for all threads. Replacing it with per-stripe commit locks, a
-fixed array of locks with write-sets hashed to stripes, would allow non-conflicting
-write transactions to commit in parallel.
+Write transactions are serialized through a single global commit lock, which
+was identified in the write-heavy evaluation as the primary throughput bottleneck.
+Under high write concurrency, each additional thread increases the average wait time for
+all threads. Replacing it with per-stripe commit locks, would allow non-conflicting write
+transactions to commit in parallel.
 
 \paragraph{Dynamic version history sizing.}
-The benchmarks in Section~\ref{sec:history-sweep} reveal that a fixed global history bound is
-too coarse for production use. Under the sparse 20-account bank transfer workload, trim aborts
-never occur and history size is irrelevant to correctness across the entire range tested
-(8-256 slots). Under a workload that concentrates writes on fewer references, the same fixed
-bound would either exhaust the snapshot window and produce trim aborts, or waste memory by
-maintaining unnecessarily long histories. The right value is therefore not a single global
-constant but a per-reference adaptive parameter, as implemented
-in Clojure's own STM: each reference tracks its own trim-abort rate and grows its history
-when aborts are detected, then shrinks it again during GC when the pressure subsides. Adding
-per-reference adaptive sizing would eliminate the need to tune
-\texttt{max-history} manually and make the system robust across workloads with heterogeneous
-access patterns.
+The benchmarks in Section~\ref{sec:history-sweep} indicate that a fixed global history bound is
+too coarse for production use. Under the low contention 20-account bank transfer workload, trim aborts
+never occur. In contrast, under concurrent short write and slow long-running read transactions, rapid
+version history growth can exhaust the snapshot window, resulting in trim aborts in read transactions.
+
+This suggests that the appropriate history size is an adaptive parameter, as implemented in
+Clojure's STM:  each reference tracks its own trim-abort rate and increases its history when
+aborts are observed. This  eliminates the need to tune \texttt{max-history} manually and
+reduces abort rates across general workloads.
 
 \paragraph{Lifecycle hook granularity.}
-The current hook model exposes only \texttt{on-commit} and \texttt{on-rollback}.
-Extending the system with \texttt{before-commit}, \texttt{after-commit},
-\texttt{before-retry}, and \texttt{after-retry} phases would enable more advanced use
-cases. A \texttt{before-commit} hook in particular would provide an integration point for
-write-ahead logging: executed after read-set validation succeeds but before any
-modifications are applied, it could append the pending write set to a persistent log,
-providing a path toward durability for side-effecting transactions.
+The current model exposes only \texttt{on-commit} and \texttt{on-rollback} hooks.
+Extending it with \texttt{before-commit}, \texttt{after-commit},
+\texttt{before-retry}, and \texttt{after-retry} phases would enable more advanced use cases.
+In particular, a \texttt{before-commit} hook would support write-ahead logging,
+executed after read-set validation and before modifications are applied.
+This would allow the pending write set to be appended to a persistent log, providing durability
+for side-effecting transactions.
