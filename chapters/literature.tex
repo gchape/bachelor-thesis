@@ -41,7 +41,7 @@ to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
 To address these limitations, Brinch Hansen and Hoare introduced
 monitors~\cite{hoare1974}. A monitor automatically acquires its lock on
 entry and releases it on exit, whether the exit is a normal \texttt{return}
-or an exception, eliminating the risk of lock leakage. Monitors also enable threads to 
+or an exception, eliminating the risk of lock leakage. Monitors also enable threads to
 safely wait for conditions on shared state
 through \emph{condition variables}, whose wait/signal mechanism implicitly
 releases and reacquires the monitor lock~\cite{hoare1974}.
@@ -231,7 +231,7 @@ exploration of optimistic concurrency control, where transactions execute
 speculatively and validate consistency only at commit time. Multi-Version
 Concurrency Control (MVCC) is a widely adopted realization of this
 approach~\cite{bernstein1983}, and notably forms the basis of Clojure's
-STM~\cite{clojure_refs}.
+STM~\cite{clojureRefs}.
 
 \subsubsection{Multi-Version Concurrency Control (MVCC)}
 
@@ -257,7 +257,7 @@ writing $O=30$. A read-only transaction $T_2$ begins at $t=5$:
 
 Since read-only transactions have a consistent view of the data, they never
 acquire locks and therefore never have to wait~\cite{bernstein1983}.
-Clojure's adoption of MVCC for its STM system~\cite{clojure_refs} showed that
+Clojure's adoption of MVCC for its STM system~\cite{clojureRefs} showed that
 MVCC could be effectively applied beyond database systems, influencing the
 design of the system in this thesis. The key design implication is that MVCC
 separates the concern of read consistency from the concern of write
@@ -359,7 +359,7 @@ Chapter~\ref{ch:implementation}.
 
 STM systems are designed to abstract synchronization primitives from the
 developer's perspective. However, from an implementor's perspective,
-Parri~\cite{parri_tm_intro} presents a taxonomy of synchronization anomalies
+Parri~\cite{parriTmIntro} presents a taxonomy of synchronization anomalies
 that arise. Because this thesis employs an optimistic MVCC-based STM
 architecture, dirty reads can effectively be excluded. Two primary concerns
 from Parri's taxonomy remain relevant:
@@ -386,7 +386,7 @@ transactions cannot both apply conflicting writes to the same location.
 Clojure's STM exposes a concise API built around \texttt{dosync}, a macro
 executing a function body in which reads and writes to \texttt{Refs},
 Clojure's transactional variables, are executed
-atomically~\cite{clojure_refs}. The implementation is based on MVCC,
+atomically~\cite{clojureRefs}. The implementation is based on MVCC,
 implemented primarily within the \texttt{LockingTransaction} class.
 Table~\ref{tab:clojure-stm} summarizes the key internal components of
 \texttt{LockingTransaction} and \texttt{Ref}.
