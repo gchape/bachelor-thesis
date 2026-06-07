@@ -2,7 +2,7 @@
 
 \section{Summary}
 This thesis presented the design and implementation of a Software Transactional
-Memory system in Clojure that enables registering side-effecting operations at
+Memory system in Clojure that enables registering side-effects at
 commit and rollback boundaries. The system was formalized and shown to satisfy
 opacity~\cite{guerraoui2007} (a correctness guarantee).
 
@@ -18,7 +18,7 @@ without significant performance penalty.
 
 \paragraph{Global commit lock.}
 Write transactions are serialized during commit through a single global commit lock,
-which was identified as the primary throughput bottleneck. Replacing it with per-stripe
+which was identified as the primary bottleneck. Replacing it with per-stripe
 commit locks would allow write transactions that map to different stripes to commit in parallel.
 
 \paragraph{Dynamic version history sizing.}
