@@ -1,24 +1,24 @@
 \chapter{Formal Model}
 \label{ch:formal-model}
 
-\textbf{Reader's Guide:} This chapter formalizes the proposed STM system
-(write points, versioned references, transactions, and commit protocol) and
-proves that every history it produces satisfies opacity~\cite{guerraoui2007}.
-The corresponding implementation is covered in Chapter~\ref{ch:implementation}.
-
+\textbf{Reader's Guide:} This chapter formalizes the STM system and proves that
+every history it produces satisfies opacity~\cite{guerraoui2007}.
+The implementation is covered in Chapter~\ref{ch:implementation}.
 \section{Preliminaries}
 
 Let $\mathcal{W}$ be the totally ordered set of \emph{write points}, where each
-$w \in \mathcal{W}$ is a positive integer corresponding to a snapshot of the
-global version clock. Let $\mathcal{R}$ be the set of \emph{transactional
-  references}, where each $r \in \mathcal{R}$ maintains a fixed history of
-versioned values indexed by write points. Let $\mathcal{V}$ be the set of all
-reference values.
+$w \in \mathcal{W}$ is a snapshot of the global version clock. Let $\mathcal{R}$
+be the set of \emph{transactional references}, where each $r \in \mathcal{R}$
+maintains a fixed history of versioned values at write points.
+Let $\mathcal{V}$ be the set of all reference values.
 
 Each reference $r \in \mathcal{R}$ is associated with a partial function
 $\mathit{hist}(r) : \mathcal{W} \rightharpoonup \mathcal{V}$ that maps a write
-point to the value committed at that point. For a transaction with read point
-$w_r$, the visible value of $r$ is defined as:
+point to the value committed at that point. Every reference also has a
+mutable field $\mathit{write\text{-}point}(r) \in \mathcal{W}$, which records
+the write point of the most recently committed version of $r$; it is updated
+by the commit protocol (Section~\ref{sec:commit-protocol}). For a transaction
+with read point $w_r$, the visible value of $r$ is defined as:
 \[
   \mathit{snap}(r,\, w_r)
   = \mathit{hist}(r)(w')
@@ -35,13 +35,14 @@ i.e.\ some transaction actually wrote $r$ at that point.
   A transaction $T$ is a tuple
   $T = \langle\, id,\; w_r,\; RS,\; WS,\; \sigma \,\rangle$ where:
   \begin{itemize}
-    \item $id \in \mathbb{N}$ is a unique monotonically increasing transaction
+    \item $id \in \mathbb{N}$ is a monotonically increasing transaction
           identifier.
-    \item $w_r \in \mathcal{W}$ is the \emph{read point}, the value of the
+    \item $w_r \in \mathcal{W}$ is the \emph{read point}, the snapshot of the
           global version clock at the time $T$ was created.
     \item $RS : \mathcal{R} \rightharpoonup \mathcal{W} \times \mathcal{V}$ is
           the \emph{read-set}, mapping each reference read during $T$ to a
-          tuple $e = (w, v)$ containing the write point and value observed.
+          tuple $e = (e.w,\, e.v)$ containing the write point and value
+          observed at the time of the read.
     \item $WS : \mathcal{R} \rightharpoonup \mathcal{V}$ is the \emph{write-set},
           mapping each reference to its speculative value.
     \item $\sigma \in \{\textsc{Active},\, \textsc{Aborted},\,
@@ -58,7 +59,7 @@ Each transaction $T$ supports the following operations on references:
   \text{deref}(r) =
   \begin{cases}
     WS[r]                 & \text{if } r \in \operatorname{dom}(WS) \\
-    RS[r].\mathit{value}  & \text{if } r \in \operatorname{dom}(RS) \\
+    RS[r].v               & \text{if } r \in \operatorname{dom}(RS) \\
     \text{snap}(r,\; w_r) & \text{otherwise}
   \end{cases}
 \]
@@ -67,7 +68,9 @@ Each transaction $T$ supports the following operations on references:
 $\text{ref-set}(r, v)$ requires $T$ to acquire ownership of $r$.
 Let $\text{owner}(r) \in \mathbb{N} \cup \{ \bot \}$ denote the ID of the
 transaction currently owning the speculative write for $r$.
-Ownership is resolved as:
+The ownership protocol favours the younger transaction: a younger claimer
+(higher $id$) preempts the current owner and aborts it, while an older claimer
+yields and aborts itself. Ownership is resolved as:
 \[
   \text{acquire}(T, r) =
   \begin{cases}
@@ -75,11 +78,11 @@ Ownership is resolved as:
      & \text{if } \text{owner}(r) = \bot \;\lor\; \text{owner}(r) = T.id \\
     \text{True},\; \sigma_{T'} \gets \textsc{Aborted}
      & \text{if } \text{owner}(r) = T'.id \;\land\; T'.id < T.id         \\
-    \text{Abort}
+    \text{False},\; \sigma_{T} \gets \textsc{Aborted}
      & \text{if } \text{owner}(r) = T'.id \;\land\; T'.id > T.id
   \end{cases}
 \]
-On success, $WS[r] \gets v$.
+On success ($\text{acquire}$ returns $\text{True}$), $WS[r] \gets v$.
 
 \section{Execution}
 
@@ -112,32 +115,38 @@ where $\text{next-tx}(T)$ is a retry transition producing a new transaction
 with an incremented $id$, subject to retry limits.
 
 \section{Commit Protocol}
+\label{sec:commit-protocol}
 
 A transaction $T$ with a non-empty write-set ($\operatorname{dom}(WS) \neq
   \emptyset$) commits under a global commit lock. Upon entering the commit phase,
 the system checks $\sigma_T$. If $\sigma_T = \textsc{Aborted}$, the transaction
 is aborted and the commit is canceled.
 
-If $T$ is still active, its read set is validated against reference
+If $T$ is still active, its read-set is validated against reference
 modifications by:
 \[
   \text{valid}(T) \;\triangleq\; \forall\, (r, e) \in RS :\;
-  \text{write-point}(r) = e.w
+  \mathit{write\text{-}point}(r) = e.w
 \]
-That is, for every reference $r$ recorded in the read-set, the current write
-point of $r$ must equal the write point observed when $r$ was read, confirming
-that no concurrent transaction has committed a new version of $r$ since $T$'s
-snapshot. If $\text{valid}(T)$ does not hold, the transaction is aborted.
+That is, for every reference $r$ in the read-set, the current
+$\mathit{write\text{-}point}(r)$ must equal $e.w$, the write point recorded in
+$RS[r]$ at the time $r$ was read, confirming that no concurrent transaction has
+committed a new version of $r$ since $T$'s snapshot. If $\text{valid}(T)$ does
+not hold, the transaction is aborted.
 
-If validation succeeds, a new write point $w_c$ is allocated atomically. The
-transaction applies its writes to the global state and releases ownership of
-each written reference:
+If validation succeeds, a new write point $w_c$ is allocated atomically by
+incrementing the global version clock. The transaction then applies its writes:
+for each $r \in \operatorname{dom}(WS)$,
 \[
-  \text{owner}(r) \gets \bot \quad \forall\, r \in \operatorname{dom}(WS)
+  \mathit{hist}(r) \gets \mathit{hist}(r) \cup \{(w_c,\, WS[r])\},
+  \qquad
+  \mathit{write\text{-}point}(r) \gets w_c,
+  \qquad
+  \text{owner}(r) \gets \bot
 \]
 
 Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) skip the commit
-lock entirely, as their snapshot consistency is guaranteed by versioned reads.
+lock entirely, as they are consistency is guaranteed by versioned reads.
 
 \section{Opacity}
 \label{sec:safety-opacity}
@@ -153,20 +162,18 @@ commit protocol.
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}
 
-Let $\mathcal{T}$ be the set of threads executing in the system. Each thread
+Let $\mathcal{T}$ be the set of threads in the system. Each thread
 $t \in \mathcal{T}$ produces a local history $H(t)$, the sequence of all
-transaction executions on that thread in the order they occurred. Within
-$H(t)$, each transaction $T$ contributes a contiguous sub-sequence of
-operation calls and their outcomes; we write $H(t)\!\upharpoonright_{T}$ for
+transaction executions on that thread. Within $H(t)$, each transaction $T$
+is a contiguous sub-sequence of operation calls and their outcomes; we write $H(t)\!\upharpoonright_{T}$ for
 this projection.
 
-The \emph{status} of $T$ at any prefix of $H(t)$ is determined solely by the
-terminal element of $H(t)\!\upharpoonright_{T}$:
+The \emph{status} of $T$ at any point of $H(t)$ is determined by the
+last element of $H(t)\!\upharpoonright_{T}$:
 
 \begin{itemize}
   \item $T$ is \textbf{live} if the projection has not yet produced an outcome
-        in $\{\textsc{Ok}, \textsc{Abort}, \textsc{Exception}\}$, i.e.\ the
-        last recorded event is still an intermediate operation call or response.
+        in $\{\textsc{Ok}, \textsc{Abort}, \textsc{Exception}\}$.
   \item $T$ is \textbf{committed} if the terminal element is $\textsc{Ok}(v)$
         for some value $v$.
   \item $T$ is \textbf{aborted} if the terminal element is $\textsc{Abort}$.
@@ -176,22 +183,16 @@ terminal element of $H(t)\!\upharpoonright_{T}$:
 
 A transaction is \emph{commit-pending} if it has entered the commit phase
 (i.e.\ the commit lock has been acquired and $\sigma_T = \textsc{Active}$)
-but $\text{valid}(T)$ has not yet been evaluated and the global write point
-$w_c$ has not yet been assigned.
+but $\text{valid}(T)$ has not yet been evaluated.
 
 \subsection{Sequential Consistency of References}
 \label{subsec:seq-spec}
 
-A \emph{sequential execution} over $\mathcal{R}$ is one in which transactions
-are totally ordered and no two transactions overlap. In such an execution the
+A \emph{sequential execution} over $\mathcal{R}$ is one in which committed
+transactions are totally ordered and no two overlap. In such an execution the
 only source of a value for $\text{deref}(r)$ inside transaction $T$ is:
 \[
-  \text{deref}_{\mathrm{seq}}(r)
-  \;=\;
-  \begin{cases}
-    WS[r]                   & \text{if } r \in \operatorname{dom}(WS), \\
-    \mathit{snap}(r,\, w_r) & \text{otherwise.}
-  \end{cases}
+  \text{deref}_{\mathrm{seq}}(r) \;=\; \mathit{snap}(r,\, w_r)
 \]
 Because the execution is sequential, $\mathit{snap}(r, w_r)$ returns the value
 written by the most recent preceding committed transaction in the total order.
@@ -202,33 +203,25 @@ committed or aborted) is consistent with $\text{deref}_{\mathrm{seq}}$ under
 \subsection{History Completion}
 \label{subsec:completion}
 
-At any chosen observation point, live transactions have not yet produced a
+At any chosen point, live transactions have not yet produced a
 final outcome. To reason about the safety of such states we define a
 \emph{completion} of a system history $H$ as a history $H'$ obtained by
-forcing every live transaction to a terminal status, subject to the following
+forcing every live transaction to a terminal status, under the following
 constraints:
 
 \begin{itemize}
   \item Every live transaction that is \emph{not} commit-pending is appended
         with an $\textsc{Abort}$ outcome in $H'$.
   \item Every live transaction that \emph{is} commit-pending may be appended
-        with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$, since it has
-        entered the commit phase but has not yet reached a terminal outcome.
+        with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$, since its
+        outcome depends on whether validation succeeds.
 \end{itemize}
 
-We denote by $\operatorname{Complete}(H)$ the set of all completions of $H$
-under the above rules. Every element of $\operatorname{Complete}(H)$ contains
-no live transactions by construction.
+$\operatorname{Complete}(H)$ denotes the set of all such completions; every
+element contains no live transactions by construction.
 
 \subsection{Formal Definitions}
 \label{subsec:opacity-defs}
-
-\begin{definition}[History Equivalence]
-  Two histories $H$ and $H'$ are \emph{equivalent}, written $H \equiv H'$,
-  if for every transaction $T$ the projection $H\!\upharpoonright_{T}$ equals
-  $H'\!\upharpoonright_{T}$; that is, $T$ performs the same sequence of
-  operations with the same outcomes in both histories.
-\end{definition}
 
 \begin{definition}[Real-Time Order]
   \label{def:rt-order}
@@ -252,9 +245,9 @@ no live transactions by construction.
   \end{enumerate}
 \end{definition}
 
-Condition~2 is what distinguishes opacity from weaker criteria such as strict
-serializability: legality is required even of aborted and live transactions,
-not just committed ones.
+Condition~2 is what distinguishes opacity from a database serializability:
+legality is required even of aborted and live transactions,
+not justcommitted ones.
 
 \subsection{Proof of Opacity}
 \label{subsec:opacity-proof}
@@ -265,15 +258,17 @@ not just committed ones.
   additional abort case: if every retained version of $r$ has a write point
   exceeding $w_r(T)$, then $\mathit{snap}(r, w_r(T))$ is undefined and $T$
   aborts before any read is recorded in $RS$. Since no read is produced,
-  Lemma~\ref{lem:snapshot-legal} below applies vacuously to the empty (or
+  Lemma~\ref{lem:snapshot-legal} below applies trivially to the empty (or
   partial) read set, and the opacity argument is unaffected.
 \end{remark}
 
 \begin{lemma}[Snapshot Legality]
   \label{lem:snapshot-legal}
   Let $T$ be any transaction whose reads were performed via
-  $\mathit{snap}(r, w_r(T))$. Then $T$ is legal when placed in $S$ immediately
-  after the committed transaction with the greatest $w_c \leq w_r(T)$.
+  $\mathit{snap}(r, w_r(T))$. Then $T$ is legal when placed in $S$ as follows:
+  if there exists a committed transaction with $w_c \leq w_r(T)$, place $T$
+  immediately after the one with the greatest such $w_c$; otherwise place $T$
+  first in $S$, before any committed transaction.
 \end{lemma}
 
 \begin{proof}
@@ -281,8 +276,13 @@ not just committed ones.
   latest write point $w' \leq w_r(T)$. At the chosen position in $S$, the
   state of every reference $r$ under $\text{deref}_{\mathrm{seq}}$ is
   determined by the last committed transaction with $w_c \leq w_r(T)$, which
-  is precisely what $\mathit{snap}$ returns. Hence $\text{deref}_{\mathrm{seq}}(r)$
-  agrees with every read $T$ performed, and $T$ is legal.
+  is precisely what $\mathit{snap}$ returns. If no such committed transaction
+  exists, the position is before any commit, so $\text{deref}_{\mathrm{seq}}$
+  returns the initial value of $r$; $\mathit{snap}(r, w_r(T))$ likewise
+  returns the initial value because no write point in
+  $\operatorname{dom}(\mathit{hist}(r))$ satisfies $w \leq w_r(T)$ except the
+  initialization point. Hence $\text{deref}_{\mathrm{seq}}(r)$ agrees with
+  every read $T$ performed, and $T$ is legal.
 \end{proof}
 
 \begin{theorem}
@@ -302,21 +302,19 @@ not just committed ones.
           append $\textsc{Ok}$ and assign the next available write point,
           otherwise append $\textsc{Abort}$.
   \end{itemize}
-  Both outcomes for commit-pending transactions are permitted by
-  $\operatorname{Complete}(H)$ because such transactions have entered the
-  commit phase but have not yet reached a terminal outcome. The resulting $H'$ contains no live transactions.
 
   \paragraph{Step 2: Sequential history.}
   Order committed transactions in $S$ by write point: $T_i$ precedes $T_j$
   iff $w_c(T_i) < w_c(T_j)$. This order is strict and total because write
   points are allocated atomically under the global commit lock
-  (Figure~\ref{fig:wc-ordering}). Place each aborted transaction immediately
-  after the committed transaction with the greatest $w_c \leq w_r(T)$
-  (Figure~\ref{fig:aborted-placement}). Multiple aborted transactions sharing
-  the same $w_r$ may appear in any mutual order at that position; by
-  Lemma~\ref{lem:snapshot-legal} each is legal there regardless of the others
-  (Figure~\ref{fig:mutual-order}). The result $S$ is sequential by
-  construction and satisfies $S \equiv H'$.
+  (Figure~\ref{fig:wc-ordering}). Place each aborted transaction at the
+  position given by Lemma~\ref{lem:snapshot-legal}: immediately after the
+  committed transaction with the greatest $w_c \leq w_r(T)$ if one exists, or
+  first in $S$ otherwise (Figure~\ref{fig:aborted-placement}). Multiple
+  aborted transactions sharing the same $w_r$ may appear in any mutual order
+  at that position; by Lemma~\ref{lem:snapshot-legal} each is legal there
+  regardless of the others (Figure~\ref{fig:mutual-order}). The result $S$ is
+  sequential by construction and satisfies $S \equiv H'$.
 
   \paragraph{Step 3: Real-time order is preserved.}
   Suppose $T_i \prec_{H'} T_j$, so $T_i$ commits strictly before $T_j$ issues
@@ -325,18 +323,13 @@ not just committed ones.
   $w_c(T_i) < w_r(T_j)$. By Step~2, $T_i$ precedes $T_j$ in $S$.
 
   \paragraph{Step 4: Every transaction is legal.}
-  Every transaction in $S$, whether committed or aborted, reads exclusively
-  via $\mathit{snap}(r,w_r(T))$, so the placement constructed in Step~2 is
-  exactly that required by Lemma~\ref{lem:snapshot-legal}.
-  It remains only to verify the precondition for committed
-  transactions: the commit protocol guarantees $\text{valid}(T)$ holds at
-  commit time, i.e.\ $\text{write-point}(r) = e.w$ for every $(r,e) \in RS$,
-  confirming that no concurrent transaction has committed a new version of any
-  $r \in RS$ since $T$'s snapshot was taken. In a write-write conflict the
-  losing transaction's write set is discarded entirely before reaching shared
-  memory, so its reads remain snapshot-consistent by the same argument. With
-  this precondition satisfied for committed transactions,
-  Lemma~\ref{lem:snapshot-legal} applies uniformly to every transaction in $S$.
+  Every transaction in $S$ reads exclusively via $\mathit{snap}(r,w_r(T))$,
+  so the placement from Step~2 satisfies the condition of
+  Lemma~\ref{lem:snapshot-legal} directly. For committed transactions, the
+  commit protocol guarantees $\text{valid}(T)$ at commit time, i.e.\
+  $\mathit{write\text{-}point}(r) = e.w$ for every $(r,e) \in RS$, so no
+  concurrent transaction modified any read reference since $T$'s snapshot.
+  Lemma~\ref{lem:snapshot-legal} therefore applies to every transaction in $S$.
 
   \paragraph{Conclusion.}
   $H' \in \operatorname{Complete}(H)$ contains no live transactions. $S$ is a
@@ -453,66 +446,106 @@ not just committed ones.
 \begin{figure}[ht]
   \centering
   \begin{tikzpicture}[
-      tx/.style     = {font=\small},
-      op/.style     = {font=\footnotesize},
-      line/.style   = {gray!35, thick},
+      tx/.style     = {font=\small\bfseries},
+      op/.style     = {font=\footnotesize\itshape},
+      ann/.style    = {font=\scriptsize},
+      line/.style   = {gray!30, thick},
       tick/.style   = {thick},
-      commit/.style = {circle, fill=black, inner sep=2pt},
-      abort/.style  = {circle, draw,       inner sep=2pt}
+      commit/.style = {circle, fill=black, inner sep=2.2pt},
+      abort/.style  = {circle, draw=black, fill=white, inner sep=2.2pt}
     ]
-    \node[tx] at (0, 0) {$T_1$};
-    \node[tx] at (0,-1) {$T_2$};
-    \node[tx] at (0,-2) {$T_3$};
 
-    \draw[line] (0.6, 0) -- (13.5, 0);
-    \draw[line] (0.6,-1) -- (13.5,-1);
-    \draw[line] (0.6,-2) -- (13.5,-2);
+    \node[tx] at (0,  0)   {$T_1$};
+    \node[tx] at (0, -2.0) {$T_2$};
+    \node[tx] at (0, -4.0) {$T_3$};
 
-    %% T1
-    \draw (1.6,0) -- (3.2,0);
-    \draw[tick] (1.6, 0.15)--(1.6,-0.15);
-    \draw[tick] (3.2, 0.15)--(3.2,-0.15);
-    \node[op] at (2.4, 0.38) {\textit{write}$(x,5)$};
-    \draw (4.2,0) -- (5.8,0);
-    \draw[tick] (4.2, 0.15)--(4.2,-0.15);
-    \draw[tick] (5.8, 0.15)--(5.8,-0.15);
-    \node[op] at (5.0, 0.38) {\textit{write}$(y,5)$};
-    \draw (5.8,0) -- (7.2,0);
-    \node[commit] at (7.2,0) {};
-    \node[op] at (7.2, 0.38) {\textit{commit}};
+    \draw[line] (0.55,  0)   -- (14.5,  0);
+    \draw[line] (0.55, -2.0) -- (14.5, -2.0);
+    \draw[line] (0.55, -4.0) -- (14.5, -4.0);
 
-    %% T2
-    \draw (2.0,-1) -- (3.4,-1);
-    \draw[tick] (2.0,-0.85)--(2.0,-1.15);
-    \draw[tick] (3.4,-0.85)--(3.4,-1.15);
-    \node[op] at (2.7,-0.62) {\textit{read}$(x)$};
-    \draw (4.0,-1) -- (5.4,-1);
-    \draw[tick] (4.0,-0.85)--(4.0,-1.15);
-    \draw[tick] (5.4,-0.85)--(5.4,-1.15);
-    \node[op] at (4.7,-0.62) {\textit{write}$(x)$};
-    \draw (5.4,-1) -- (8.8,-1);
-    \node[abort] at (8.8,-1) {};
+    \draw[tick] (1.2,  0.15) -- (1.2, -0.15);
+    \draw[tick] (2.8,  0.15) -- (2.8, -0.15);
+    \draw[very thick] (1.2, 0) -- (2.8, 0);
+    \node[op, above] at (2.0, 0.06) {\textit{write}$(x,5)$};
+    \node[ann, gray, below] at (1.2, -0.18) {$w_r{=}0$};
 
-    \node[op] at (8.8,-0.62) {\textit{abort}};
+    \draw[tick] (3.8,  0.15) -- (3.8, -0.15);
+    \draw[tick] (5.2,  0.15) -- (5.2, -0.15);
+    \draw[very thick] (3.8, 0) -- (5.2, 0);
+    \node[op, above] at (4.5, 0.06) {\textit{write}$(y,5)$};
 
-    %% T3
-    \draw (7.4,-2) -- (8.8,-2);
-    \draw[tick] (7.4,-1.85)--(7.4,-2.15);
-    \draw[tick] (8.8,-1.85)--(8.8,-2.15);
-    \node[op] at (8.1,-2.38) {\textit{read}$(x)$};
-    \draw (9.2,-2) -- (10.6,-2);
-    \draw[tick] (9.2,-1.85)--(9.2,-2.15);
-    \draw[tick] (10.6,-1.85)--(10.6,-2.15);
-    \node[op] at (9.9,-2.38) {\textit{write}$(x,10)$};
-    \draw (10.6,-2) -- (11.8,-2);
-    \node[commit] at (11.8,-2) {};
-    \node[op] at (11.8,-2.38) {\textit{commit}};
+    \draw[very thick] (5.2, 0) -- (6.6, 0);
+    \node[commit] at (6.6, 0) {};
+    \node[op, above] at (6.6, 0.06) {\textit{commit}};
+    \node[ann, below] at (6.6, -0.18) {$w_c(T_1){=}1$};
+
+    \draw[tick] (2.6, -1.85) -- (2.6, -2.15);
+    \draw[tick] (4.0, -1.85) -- (4.0, -2.15);
+    \draw[very thick] (2.6, -2.0) -- (4.0, -2.0);
+    \node[op, above] at (3.3, -1.94) {\textit{read}$(x)$};
+    \node[ann, gray, below] at (2.6, -2.18) {$w_r{=}0$};
+
+    \draw[tick] (4.6, -1.85) -- (4.6, -2.15);
+    \draw[tick] (6.0, -1.85) -- (6.0, -2.15);
+    \draw[very thick, dashed] (4.6, -2.0) -- (6.0, -2.0);
+    \node[op, above] at (5.3, -1.94) {\textit{write}$(x)$};
+
+    \node[ann, red!65!black] at (5.3, -2.62)
+    {$\mathit{id}(T_1){>}\mathit{id}(T_2)$: ownership lost};
+
+    \draw[very thick] (6.0, -2.0) -- (8.0, -2.0);
+    \node[abort] at (8.0, -2.0) {};
+    \node[op, above] at (8.0, -1.94) {\textit{abort}};
+
+    \draw[tick] (9.4, -3.85) -- (9.4, -4.15);
+    \draw[tick] (10.8, -3.85) -- (10.8, -4.15);
+    \draw[very thick] (9.4, -4.0) -- (10.8, -4.0);
+    \node[ann, gray, above] at (9.4, -3.88) {$w_r(T_3){=}1$};
+    \node[op, below] at (10.1, -4.06) {\textit{read}$(x)$};
+
+    \draw[tick]       (11.4, -3.85) -- (11.4, -4.15);
+    \draw[tick]       (12.8, -3.85) -- (12.8, -4.15);
+    \draw[very thick] (11.4, -4.0) -- (12.8, -4.0);
+    \node[op, below] at (12.1, -4.06) {\textit{write}$(x,10)$};
+
+    \draw[very thick] (12.8, -4.0) -- (13.8, -4.0);
+    \node[commit]    at (13.8, -4.0) {};
+    \node[op, below] at (13.8, -4.06) {\textit{commit}};
+    \node[ann, above] at (13.8, -3.88) {$w_c(T_3){=}2$};
+
+    \node[ann, gray] at (-0.1, -5.5) {$S$:};
+    \draw[->] (0.55, -5.5) -- (14.5, -5.5);
+
+    \node[abort]  at (4.0,  -5.5) {};
+    \node[ann, below] at (4.0,  -5.65) {$T_2$};
+
+    \node[commit] at (6.6,  -5.5) {};
+    \node[ann, below] at (6.6,  -5.65) {$T_1$};
+
+    \node[commit] at (13.8, -5.5) {};
+    \node[ann, below] at (13.8, -5.65) {$T_3$};
+
+    \draw[->, gray!70, thin] (4.18, -5.5) -- (6.42, -5.5);
+    \draw[->, gray!70, thin] (6.78, -5.5) -- (13.6,  -5.5);
+
+    \node[commit] at (1.0, -6.5) {};
+    \node[ann, right] at (1.25, -6.5) {committed};
+    \node[abort]  at (4.2, -6.5) {};
+    \node[ann, right] at (4.45, -6.5) {aborted};
+    \draw[very thick, dashed] (7.0, -6.5) -- (8.2, -6.5);
+    \node[ann, right] at (8.35, -6.5) {failed write (ownership lost)};
+
   \end{tikzpicture}
-  \caption{A concrete opaque history. $T_1$ and $T_3$ commit (ordered by
-    write point $w_c(T_1) < w_c(T_3)$) while $T_2$ is aborted due to a
-    write-write conflict on $x$. Despite being aborted, $T_2$ observes only
-    values committed at write points no greater than $w_r(T_2)$, satisfying
-    the opacity requirement of~\cite{guerraoui2007}. The sequential history
-    $S$ constructed in Step~2 places $T_2$ between $T_1$ and $T_3$.}
+  \caption{A concrete opaque history. $T_1$ ($\mathit{id}{=}2$, younger)
+    and $T_3$ ($\mathit{id}{=}3$) commit; $T_2$ ($\mathit{id}{=}1$, older)
+    is aborted because $T_1$ steals ownership of $x$ at write time
+    (Section~\ref{sec:conflict-resolution}).
+    Since $w_r(T_2){=}0$, no committed transaction has $w_c \leq w_r(T_2)$,
+    so $T_2$ is placed first in $S$; its reads are consistent with the
+    initial state of memory before any commit.
+    $T_3$ begins after $T_1$ commits, so $w_r(T_3){=}w_c(T_1){=}1$
+    and its read returns $\mathit{snap}(x,1){=}5$.
+    The sequential history $S$ is therefore $T_2 \to T_1 \to T_3$,
+    satisfying the opacity requirement of~\cite{guerraoui2007}.}
   \label{fig:opaque-history}
 \end{figure}

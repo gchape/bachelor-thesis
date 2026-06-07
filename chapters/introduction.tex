@@ -3,7 +3,7 @@
 \section{Background}
 \label{sec:intro}
 
-In computer science, concurrency makes it far more difficult to reason about
+In computer science, concurrency makes it difficult to reason about
 program state. In a sequential execution model, state updates happen in a well-defined order,
 and each operation observes a consistent state produced by its predecesso.
 In contrast, in concurrent systems, multiple sequences of operations may interleave,
@@ -58,7 +58,7 @@ To address these challenges, Lomet~\cite{lomet1977} proposed that programmers
 should be able to declaratively specify that a block of code be executed atomically,
 shifting responsibility for synchronization from the programmer to the underlying
 system. Software Transactional Memory~(STM) is one realization of this idea: a sequence
-of memory operations is treated as a transaction that either commits in its entirety or
+of memory operations is treated as a transaction that either commits exclusively or
 has no effect at all.
 
 Beyond atomicity, STM offers an important advantage over lock-based mechanisms:
@@ -93,28 +93,29 @@ a single transaction and committed atomically:
 \noindent If any conflict occurs mid-execution, the entire transaction is
 retried and no intermediate state is ever visible to other threads. Larger
 atomic operations can be constructed naturally from smaller ones, without
-the programmer reasoning about lock ordering or failure scenarios.
+the programmer reasoning explicitly about correctness.
 
 \section{Problem Statement}
-The Clojure STM documentation states that because transactions are retried on conflict, side-effecting operations are explicitly disallowed:
+The Clojure STM documentation states that because transactions are retried
+on conflict, side-effecting operations are disallowed:
+
 \begin{quote}
   I/O and other activities with side-effects should be avoided in
   transactions, since transactions will be retried~\cite{clojureRefs}.
 \end{quote}
 
 However, some applications inherently require side effects, such as logging,
-updating state, sending notifications, or interacting with external systems.
-In such cases, this restriction provides no safe mechanism for coordinating
-such operations with transaction outcomes.
+sending notifications, or interacting with external systems. Clojure's STM
+provides no safe mechanism for coordinating these effects with transaction
+outcomes.
 
 A direct approach would be to extend Clojure's existing STM with side-effect hooks.
 However, extending the native STM is not straightforward. Its core functionality is
 implemented in \texttt{LockingTransaction.java} within the \texttt{clojure.lang} package,
 and the key methods \texttt{doGet}, \texttt{doSet}, and \texttt{run} have package-private
 visibility, making them inaccessible outside the package. Prior work addressed this limitation
-by forking the Clojure runtime~\cite{jensen2016} and extending it at the runtime level. However,
-this approach couples the solution to a specific runtime implementation and increases the
-maintenance burden.
+by forking the Clojure~\cite{jensen2016} and extending it. However, this approach couples the
+solution to a runtime and increases the maintenance burden.
 
 This project designs and implements an STM system in Clojure from the ground up at the
 language level. The implementation is a variation of the TL2 algorithm~\cite{dice2006transactional}.

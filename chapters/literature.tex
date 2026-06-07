@@ -71,9 +71,9 @@ able to specify that a sequence of operations must execute atomically without ex
 managing synchronization details, an idea that was later realized in transactional
 memory systems.
 
-Transactional Memory (TM) was inspired by database systems and the ACID properties:
+Transactional Memory (TM) was inspired by databases and the ACID properties:
 atomicity, consistency, isolation, and durability, first formalized by \citeauthor{haerder1983}~\cite{haerder1983}.
-While durability is generally not required for in-memory concurrency control,
+While durability is generally not required for in-memory transactions,
 the remaining guarantees provide a strong conceptual foundation for TM.
 
 \subsection{Hardware Transactional Memory}
@@ -355,8 +355,7 @@ anomalies from Parri's taxonomy remain relevant:
   \item \textbf{Non-Repeatable Read}: a transaction reads the same
         location twice and observes different values.
   \item \textbf{Intermediate Lost Update}: concurrent transactions modify
-        overlapping locations and one update is silently overwritten,
-        producing a result inconsistent with any serial execution.
+        overlapping locations and one update is silently overwritten.
 \end{itemize}
 
 In the system presented in this thesis, non-repeatable reads are addressed
@@ -368,9 +367,8 @@ Sections~\ref{sec:reading} and~\ref{sec:conflict-resolution}.
 \section{Existing Clojure STM Approaches and Limitations}
 
 Clojure's STM exposes a concise API built around \texttt{dosync}, a macro
-executing a function body in which reads and writes to \texttt{Refs},
-Clojure's transactional variables, are executed
-atomically~\cite{clojureRefs}. The implementation is based on MVCC,
+executing a function body, in which reads and writes to \texttt{Refs} are
+executed atomically~\cite{clojureRefs}. The implementation is based on MVCC,
 implemented primarily within the \texttt{LockingTransaction} class.
 Table~\ref{tab:clojure-stm} summarizes the key internal components of
 \texttt{LockingTransaction} and \texttt{Ref}.
@@ -410,11 +408,11 @@ which acquires a write lock on the \texttt{Ref}, adds it to \texttt{sets}, and
 buffers the new value in \texttt{vals} without modifying shared memory until
 commit.
 
-In contrast to Clojure's otherwise comprehensive STM design, transactions do
-not support side effects because they may be retried multiple times before
-committing. Any side effect performed within a transaction would therefore be
-repeated on each retry. This limitation creates a need for mechanisms that
-coordinate side effects with the transaction lifecycle.
+However, in contrast to its otherwise comprehensive STM design, transactions do
+not support side-effects because they may be retried multiple times before
+committing. Any side-effect performed within a transaction would therefore be
+repeated on each retry. This design choice leaves no mechanism for coordinating
+side effects with transaction outcomes.
 
 \citeauthor{jensen2016}~\cite{jensen2016} addressed this by forking the
 Clojure runtime and extending \texttt{LockingTransaction}, introducing
@@ -424,7 +422,7 @@ effective, this approach couples the extension tightly to the runtime.
 The system presented in this thesis takes a different approach. Rather than
 modifying \texttt{LockingTransaction}, side-effect coordination is implemented
 at the language level. This avoids dependence on a particular Clojure runtime
-while providing equivalent commit and rollback semantics.
+while providing commit and rollback semantics.
 
 Furthermore, Section~\ref{subsec:opacity-proof} shows that the resulting
 system satisfies opacity~\cite{guerraoui2007}, providing formal correctness

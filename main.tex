@@ -100,13 +100,13 @@ accordance with academic standards.
 \addcontentsline{toc}{chapter}{Abstract}
 
 Clojure's native Software Transactional Memory (STM) provides no safe mechanism for
-coordinating side-effects such as logging, notifications, or external API calls.
+coordinating side-effects such as logging, or sending notifications.
 This thesis presents the design, formal analysis, and implementation of an STM system
-for Clojure, that addresses this gap.
+in Clojure, that addresses this gap.
 
 The thesis enables STM through Multi-Version Concurrency Control (MVCC),
 introduces a transactional event system that defers side effects until
-transaction commit or rollback, implements an ownership control protocol
+transaction commit or rollback, implements an ownership control mechanism
 that resolves write conflicts eagerly, and maintains a bounded version history.
 The system is shown to be opaque, guaranteeing that every transaction,
 including aborted ones, always observes a consistent state.
