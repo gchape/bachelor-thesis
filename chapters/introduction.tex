@@ -5,10 +5,9 @@
 
 In computer science, concurrency makes it far more difficult to reason about
 program state. In a sequential execution model, state updates happen in a well-defined order,
-and each operation observes a consistent state produced by its predecessor, allowing
-developers to reason about program execution step by step. In contrast, in concurrent systems,
-multiple sequences of operations may interleave, and their interactions can
-lead to non-deterministic outcomes.
+and each operation observes a consistent state produced by its predecesso.
+In contrast, in concurrent systems, multiple sequences of operations may interleave,
+and their interactions can lead to non-deterministic outcomes.
 
 Consider a simple example in which two threads concurrently increment a shared counter:
 
@@ -49,9 +48,9 @@ this through mutual exclusion, ensuring that only one thread may access a
 critical section at a time. Locks and monitors are among the most widely used
 approaches for enforcing such guarantees.
 
-While fine-grained synchronization can achieve thread safety, reasoning about
-it is error-prone. Locks must be manually acquired and released, and as systems
-grow  in complexity, preserving program invariants in the presence of exceptions
+While fine-grained synchronization can provide thread safety, ensuring its correctness
+is often difficult and error-prone.  Locks must be manually acquired and released, and
+as systems grow  in complexity, preserving program invariants in the presence of exceptions
 becomes  increasingly difficult. Exceptions, in particular, can cause locks to be
 held indefinitely, potentially deadlocking the system.
 
@@ -119,13 +118,6 @@ maintenance burden.
 
 This project designs and implements an STM system in Clojure from the ground up at the
 language level. The implementation is a variation of the TL2 algorithm~\cite{dice2006transactional}.
-
-\begin{enumerate}
-  \item MVCC-based concurrency control
-  \item a variation of the TL2 STM algorithm
-  \item commit and rollback hooks for side effects
-  \item an idiomatic Clojure API
-\end{enumerate}
 
 \noindent Table~\ref{tab:public-api} summarizes the project API. All
 transactional operations are in the \texttt{opusdb.atomic.stm} namespace; side-effect hooks

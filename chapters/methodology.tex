@@ -40,10 +40,10 @@ i.e.\ some transaction actually wrote $r$ at that point.
     \item $w_r \in \mathcal{W}$ is the \emph{read point}, the value of the
           global version clock at the time $T$ was created.
     \item $RS : \mathcal{R} \rightharpoonup \mathcal{W} \times \mathcal{V}$ is
-          the \emph{read set}, mapping each reference read during $T$ to a
+          the \emph{read-set}, mapping each reference read during $T$ to a
           tuple $e = (w, v)$ containing the write point and value observed.
-    \item $WS : \mathcal{R} \rightharpoonup \mathcal{V}$ is the \emph{write
-            set}, mapping each reference to its speculative value.
+    \item $WS : \mathcal{R} \rightharpoonup \mathcal{V}$ is the \emph{write-set},
+          mapping each reference to its speculative value.
     \item $\sigma \in \{\textsc{Active},\, \textsc{Aborted},\,
             \textsc{Committed}\}$ is the transaction status.
   \end{itemize}
@@ -113,7 +113,7 @@ with an incremented $id$, subject to retry limits.
 
 \section{Commit Protocol}
 
-A transaction $T$ with a non-empty write set ($\operatorname{dom}(WS) \neq
+A transaction $T$ with a non-empty write-set ($\operatorname{dom}(WS) \neq
   \emptyset$) commits under a global commit lock. Upon entering the commit phase,
 the system checks $\sigma_T$. If $\sigma_T = \textsc{Aborted}$, the transaction
 is aborted and the commit is canceled.
@@ -124,7 +124,7 @@ modifications by:
   \text{valid}(T) \;\triangleq\; \forall\, (r, e) \in RS :\;
   \text{write-point}(r) = e.w
 \]
-That is, for every reference $r$ recorded in the read set, the current write
+That is, for every reference $r$ recorded in the read-set, the current write
 point of $r$ must equal the write point observed when $r$ was read, confirming
 that no concurrent transaction has committed a new version of $r$ since $T$'s
 snapshot. If $\text{valid}(T)$ does not hold, the transaction is aborted.
@@ -143,12 +143,12 @@ lock entirely, as their snapshot consistency is guaranteed by versioned reads.
 \label{sec:safety-opacity}
 
 Opacity, introduced by Guerraoui and Kapalka~\cite{guerraoui2007}, is the
-core correctness criterion for the proposed system. It requires that every
-transaction, including those that ultimately abort, always observes a
-consistent state of memory. We now show that the system defined in the
-preceding sections satisfies this criterion, grounding the proof in the
-execution model already established: write points, the snapshot function
-$\mathit{snap}$, and the commit protocol.
+standard correctness criterion for STM systems. It requires that every
+transaction, including those that abort, always observes a consistent state
+of memory. We now show that the system defined in the preceding sections
+satisfies this criterion, grounding the proof in the execution model already
+established: write points, the snapshot function $\mathit{snap}$, and the
+commit protocol.
 
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}
@@ -212,9 +212,8 @@ constraints:
   \item Every live transaction that is \emph{not} commit-pending is appended
         with an $\textsc{Abort}$ outcome in $H'$.
   \item Every live transaction that \emph{is} commit-pending may be appended
-        with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$; both are
-        permitted because the commit lock is held but the outcome has not yet
-        been determined.
+        with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$, since it has
+        entered the commit phase but has not yet reached a terminal outcome.
 \end{itemize}
 
 We denote by $\operatorname{Complete}(H)$ the set of all completions of $H$
@@ -304,8 +303,8 @@ not just committed ones.
           otherwise append $\textsc{Abort}$.
   \end{itemize}
   Both outcomes for commit-pending transactions are permitted by
-  $\operatorname{Complete}(H)$ since the commit lock is held but no outcome
-  has been determined. The resulting $H'$ contains no live transactions.
+  $\operatorname{Complete}(H)$ because such transactions have entered the
+  commit phase but have not yet reached a terminal outcome. The resulting $H'$ contains no live transactions.
 
   \paragraph{Step 2: Sequential history.}
   Order committed transactions in $S$ by write point: $T_i$ precedes $T_j$
@@ -326,10 +325,10 @@ not just committed ones.
   $w_c(T_i) < w_r(T_j)$. By Step~2, $T_i$ precedes $T_j$ in $S$.
 
   \paragraph{Step 4: Every transaction is legal.}
-  Every transaction in $S$, whether committed, aborted, commit-pending, or
-  live, reads exclusively via $\mathit{snap}(r, w_r(T))$, so the position
-  constructed in Step~2 is exactly what Lemma~\ref{lem:snapshot-legal}
-  requires. It remains only to verify the precondition for committed
+  Every transaction in $S$, whether committed or aborted, reads exclusively
+  via $\mathit{snap}(r,w_r(T))$, so the placement constructed in Step~2 is
+  exactly that required by Lemma~\ref{lem:snapshot-legal}.
+  It remains only to verify the precondition for committed
   transactions: the commit protocol guarantees $\text{valid}(T)$ holds at
   commit time, i.e.\ $\text{write-point}(r) = e.w$ for every $(r,e) \in RS$,
   confirming that no concurrent transaction has committed a new version of any
