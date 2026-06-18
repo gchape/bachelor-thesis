@@ -1,9 +1,11 @@
 \chapter{Formal Model}
 \label{ch:formal-model}
 
-\textbf{Reader's Guide:} This chapter formalizes the STM system and proves that
-every history it produces satisfies opacity~\cite{guerraoui2007}.
-The implementation is covered in Chapter~\ref{ch:implementation}.
+This chapter formalises the STM system and proves that every history it
+produces satisfies opacity~\cite{guerraoui2007}. Readers primarily interested
+in the implementation may skip ahead to Chapter~\ref{ch:implementation} and
+return here for the correctness argument.
+
 \section{Preliminaries}
 
 Let $\mathcal{W}$ be the totally ordered set of \emph{write points}, where each
@@ -150,17 +152,18 @@ for each $r \in \operatorname{dom}(WS)$,
   \text{owner}(r) \gets \bot
 \]
 
-Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) avoid the commit
+Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) bypass the commit
 lock entirely, as their consistency is guaranteed by versioned reads.
 
 \section{Opacity}
 \label{sec:safety-opacity}
 
-Opacity~\cite{guerraoui2007} is the correctness criterion most commonly used
-for STM systems: every transaction, including those that abort, must always
-observe a consistent state of memory. This section shows the system defined
-above satisfies opacity, using the write points, the snapshot function
-$\mathit{snap}$, and the commit protocol already established.
+Opacity~\cite{guerraoui2007} is the correctness criterion we target: every
+transaction, including aborted ones, must always observe a consistent state of
+memory. This is stronger than database serializability, which only requires
+committed transactions to be consistent; opacity extends the guarantee to every
+transaction that ever executes, regardless of outcome. The subsections below
+build up the machinery needed for the proof and then establish it formally.
 
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}
@@ -168,11 +171,11 @@ $\mathit{snap}$, and the commit protocol already established.
 Let $\mathcal{T}$ be the set of threads in the system. Each thread
 $t \in \mathcal{T}$ produces a local history $H(t)$, the sequence of all
 transaction executions on that thread. Within $H(t)$, each transaction $T$
-is a contiguous sub-sequence of operation calls and their outcomes; we write $H(t)\!\upharpoonright_{T}$ for
-this projection.
+is a contiguous sub-sequence of operation calls and their outcomes; we write
+$H(t)\!\upharpoonright_{T}$ for this projection.
 
-The \emph{status} of $T$ at any point of $H(t)$ is determined by the
-last element of $H(t)\!\upharpoonright_{T}$:
+The \emph{status} of $T$ at any point of $H(t)$ is determined by the last
+element of $H(t)\!\upharpoonright_{T}$:
 
 \begin{itemize}
   \item $T$ is \textbf{live} if the projection has not yet produced an outcome
@@ -201,16 +204,15 @@ Because the execution is sequential, $\mathit{snap}(r, w_r)$ returns the value
 written by the most recent preceding committed transaction in the total order.
 A history is \emph{legal} if every read performed by every transaction (whether
 committed or aborted) is consistent with $\text{deref}_{\mathrm{seq}}$ under
-\emph{some} total order on the transactions.
+some total order on the transactions.
 
 \subsection{History Completion}
 \label{subsec:completion}
 
-At any chosen point, live transactions have not yet produced a
-final outcome. To reason about the safety of such states we define a
-\emph{completion} of a system history $H$ as a history $H'$ obtained by
-forcing every live transaction to a terminal status, under the following
-constraints:
+Live transactions complicate the opacity argument because they have not yet
+produced a final outcome. To reason about histories that contain them, we
+define a \emph{completion} of $H$ as a history $H'$ obtained by forcing every
+live transaction to a terminal status:
 
 \begin{itemize}
   \item Every live transaction that is \emph{not} commit-pending is appended
@@ -248,8 +250,12 @@ element contains no live transactions by construction.
   \end{enumerate}
 \end{definition}
 
-Condition~2 is what separates opacity from database serializability: legality
-is required of aborted and live transactions too, not only committed ones.
+Condition~2 is the distinguishing feature of opacity: legality is demanded of
+every transaction that appears in $S$, not just the committed ones. A system
+that only guarantees condition~2 for committed transactions satisfies
+serializability but not opacity, and could expose an aborted transaction to an
+inconsistent intermediate state — something that must not happen in an STM
+where aborted transactions may have already acted on what they read.
 
 \subsection{Proof of Opacity}
 \label{subsec:opacity-proof}
@@ -259,9 +265,9 @@ is required of aborted and live transactions too, not only committed ones.
   The bounded version history (Section~\ref{sec:mvcc-design}) adds one more
   abort case: if every retained version of $r$ has a write point exceeding
   $w_r(T)$, then $\mathit{snap}(r, w_r(T))$ is undefined and $T$ aborts before
-  any read is recorded in $RS$. Since no read is produced, Lemma~\ref{lem:snapshot-legal}
-  below holds trivially for the empty (or partial) read set, so the opacity
-  argument still goes through.
+  any read is recorded in $RS$. Since no read is produced,
+  Lemma~\ref{lem:snapshot-legal} below holds trivially for the empty (or
+  partial) read set, so the opacity argument still goes through.
 \end{remark}
 
 \begin{lemma}[Snapshot Legality]
