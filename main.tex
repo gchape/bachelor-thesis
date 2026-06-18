@@ -96,24 +96,29 @@ accordance with academic standards.
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-Clojure's own Software Transactional Memory (STM) provides no mechanism for
-coordinating side-effects such as logging, or sending notifications.
-This thesis presents the design, formal analysis, and implementation of an STM system
-in Clojure, that addresses this gap.
+Clojure's built-in Software Transactional Memory (STM) provides no mechanism
+for coordinating side-effects such as logging or sending notifications.
+Because transaction bodies may be retried an arbitrary number of times before
+committing, any side-effect placed inside a transaction fires on every attempt,
+not just the successful one. This thesis addresses that gap by designing and
+implementing a new STM system in Clojure from scratch.
 
-The thesis enables STM through Multi-Version Concurrency Control (MVCC),
-introduces a transactional event system that defers side effects until
-transaction commit or rollback, implements an ownership control mechanism
-that resolves write conflicts eagerly, and maintains a bounded version history.
-The system is shown to be opaque, guaranteeing that every transaction,
-including aborted ones, always observes a consistent state.
+The system is built on a variation of the TL2 algorithm extended with
+Multi-Version Concurrency Control (MVCC), which allows read-only transactions
+to proceed without acquiring any lock. Write conflicts are resolved eagerly at
+the point of write rather than at commit time, and a bounded version history
+per reference keeps readers from blocking writers. A transactional event system
+exposes \texttt{on-commit} and \texttt{on-rollback} hooks that defer
+side-effects to well-defined lifecycle boundaries. The system is formally shown
+to satisfy opacity: every transaction, including aborted ones, always observes
+a consistent state of memory.
 
-Our evaluation demonstrates throughput of 1,969,463 transactions per second
-at twelve threads under read-heavy workloads, and scalable performance under high
-contention. The transactional event system introduces an overhead of
-$0.22\,\mu\text{s}$ per commit, roughly 14\% of the baseline commit cost,
-showing that side-effect handling can be added to a transactional model
-without meaningful performance penalty.
+Evaluation on a six-core machine shows throughput of 1,969,463 transactions
+per second at twelve threads under read-heavy workloads, and scaling throughput
+under maximum contention despite every pair of concurrent transactions
+conflicting. The \texttt{on-commit} hook adds $0.22\,\mu\text{s}$ per commit
+— roughly 14\% of the baseline — confirming that the side-effect mechanism
+is cheap enough not to discourage use.
 
 \bigskip
 \noindent\textbf{Keywords:} software transactional memory, multi-version concurrency
