@@ -4,9 +4,9 @@
 \label{sec:intro}
 
 In sequential programs, state updates occur in a well-defined order, and each operation
-observes a consistent state produced by previous operations. In contrast, concurrent 
-programs allow multiple sequences of operations to interleave, making it harder to 
-reason about program state.
+observes a consistent state produced by previous operations. Concurrent programs break
+this assumption by allowing multiple sequences of operations to interleave, which makes
+it considerably harder to reason about what any individual operation will see.
 
 Consider a simple example in which two threads concurrently increment a shared counter:
 
@@ -21,8 +21,8 @@ Consider a simple example in which two threads concurrently increment a shared c
   \end{tabular}
 \end{table}
 
-\noindent At a high level, each increment appears atomic. However, on hardware
-it is typically implemented as a sequence of three steps: reading the value from memory,
+\noindent At a high level, each increment appears atomic. On hardware, however,
+it typically decomposes into three steps: reading the value from memory,
 incrementing it, and writing it back:
 
 \begin{table}[ht]
@@ -47,24 +47,24 @@ this through mutual exclusion, ensuring that only one thread may access a
 critical section at a time. Locks and monitors are among the most widely used
 approaches for enforcing such guarantees.
 
-While these approaches can provide thread safety, ensuring correctness is
-difficult and  error-prone: locks must be manually acquired and released,
-and as systems grow in complexity, preserving program invariants in the
-presence of exceptions becomes sophisticated. Exceptions, in
-particular, can cause locks to be held indefinitely, potentially deadlocking the system.
+While these mechanisms can provide thread safety, getting them right is
+difficult in practice: locks must be manually acquired and released, and
+preserving invariants in the presence of exceptions grows increasingly subtle
+as systems scale. An exception thrown after a lock has been acquired but before
+it is released can leave the lock held indefinitely, potentially deadlocking
+the entire system.
 
-To address these challenges, Lomet~\cite{lomet1977} proposed that programmers
-should be able to declaratively specify that a block of code be executed atomically,
-shifting responsibility for synchronization from the programmer to the underlying
-system. Software Transactional Memory~(STM) is a manifestation of this idea: a sequence
-of memory operations is treated as a transaction that either commits exclusively or
-has no effect at all.
+Lomet~\cite{lomet1977} proposed a different framing: rather than managing
+synchronisation explicitly, programmers should be able to declare that a block
+of code must execute atomically and leave the mechanism to the underlying
+system. Software Transactional Memory~(STM) is a realisation of this idea.
 
-In addition, STM offers an important advantage: \emph{composability}. Consider a
-bank transfer consisting of a withdrawal from one account and a deposit into another.
-Although each operation can be made atomic individually, their composition is not
-necessarily atomic; another thread may observe an inconsistent intermediate state
-between the two operations.
+Beyond atomicity, STM provides something that lock-based approaches struggle
+with: \emph{composability}. Consider a bank transfer — a withdrawal from one
+account followed by a deposit into another. Each operation can be made atomic
+in isolation, but composing them does not automatically make the pair atomic.
+Another thread can observe the state between the two operations, seeing money
+that has left one account but not yet arrived in the other.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -75,9 +75,8 @@ between the two operations.
   \caption{Non-composable transfer}
 \end{listing}
 
-Ensuring that the transfer itself executes atomically requires
-additional synchronization. With STM, however, both operations are composed into
-a single transaction and committed atomically:
+With STM, both operations are wrapped in a single transaction and committed
+together:
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -89,38 +88,56 @@ a single transaction and committed atomically:
   \caption{Composable transfer with STM}
 \end{listing}
 
-\noindent If conflicts occur mid-execution, the entire transaction is
-retried and no intermediate state is ever visible to other threads.
-As a result, larger atomic operations can be constructed from smaller ones.
+\noindent If a conflict occurs mid-execution, the runtime retries the entire
+transaction from scratch, and no intermediate state is ever visible to other
+threads. Each of \texttt{withdraw} and \texttt{deposit} can be written with
+its own \texttt{dosync}; when called inside an enclosing transaction they
+simply join it, which is the flat-nesting behaviour described in
+Section~\ref{ch:implementation}.
 
 \section{Problem Statement}
-The Clojure documentation states that because transactions are retried
-on conflict, side-effecting operations are disallowed:
+
+Clojure ships with its own STM implementation, built around \texttt{dosync}
+and transactional references (\texttt{ref}s). It is well-designed and widely
+used, but it has a documented limitation. The official documentation is direct
+about it:
 
 \begin{quote}
   I/O and other activities with side-effects should be avoided in
   transactions, since transactions will be retried~\cite{clojureRefs}.
 \end{quote}
 
-However, some applications by design require side effects, such as logging,
-or sending notifications.
+The reason is straightforward: if a transaction body is re-executed on conflict,
+any side-effect inside it — a log write, a notification, an external API call —
+will be repeated on every retry, not just on the successful commit. There is no
+built-in mechanism to defer such effects to the point where the transaction is
+known to have succeeded.
 
-A direct approach to this problem would be to extend Clojure's existing STM
-with side-effect hooks. However, extending the native STM is not straightforward.
-Its core functionality is encapsulated in \texttt{LockingTransaction.java} within the
-\texttt{clojure.lang} package, and the key methods \texttt{doGet}, \texttt{doSet},
-and \texttt{run} have package-private visibility, making them inaccessible outside the package.
-Prior work addressed this limitation by forking Clojure~\cite{jensen2016} and modifying
-its runtime. However, this approach couples the solution to a specific release and
-increases maintenance effort.
+For some applications this is not a problem, but for others it is a real
+constraint. Audit logging, for instance, needs to record exactly the commits
+that took effect, not every attempt. Event-driven systems that fire
+notifications on state changes face the same issue.
 
-We take an alternative approach by designing and implementing an STM system in Clojure
-from the ground up at the language level.
-The implementation is based on a variation of the TL2 algorithm~\cite{dice2006transactional}.
+The most direct fix would be to extend Clojure's existing STM. The obstacle
+is that the implementation lives in \texttt{LockingTransaction.java} inside
+the \texttt{clojure.lang} package, and the methods that would need to be
+extended — \texttt{doGet}, \texttt{doSet}, and \texttt{run} — have
+package-private visibility. They cannot be overridden or wrapped from outside
+the package. Jensen and Thomsen~\cite{jensen2016} worked around this by
+forking the Clojure runtime itself and modifying \texttt{LockingTransaction}
+directly, which works but ties the solution to a specific Clojure release and
+adds ongoing maintenance burden.
 
-\noindent Table~\ref{tab:public-api} summarizes the project API. All
-transactional operations are in the \texttt{opusdb.atomic.stm} namespace; side-effect hooks
-are in \texttt{opusdb.atomic.tx-hooks}.
+This thesis takes a different route: rather than modifying the runtime, we
+implement an STM system from scratch at the language level in Clojure. The
+core algorithm is a variation of TL2~\cite{dice2006transactional}, extended
+with MVCC and a transactional event system that exposes commit and rollback
+hooks as first-class API. The result is decoupled from any particular Clojure
+version and requires no changes to the runtime.
+
+Table~\ref{tab:public-api} summarises the full public API. Transactional
+operations live in the \texttt{opusdb.atomic.stm} namespace; the hook
+mechanism is in \texttt{opusdb.atomic.tx-hooks}.
 
 \begin{table}[H]
   \centering
