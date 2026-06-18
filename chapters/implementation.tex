@@ -4,22 +4,28 @@
 The complete source code is publicly available at~\cite{chapidze2026opusdb}.
 
 \section{Alignment with TL2}
-Our implementation is a variation of Transactional Locking II
-(TL2)~\cite{dice2006transactional}, with the following three differences:
+Our implementation follows the structure of Transactional Locking II
+(TL2)~\cite{dice2006transactional}, though it differs from the original
+in three respects.
 
 TL2 supports two lock-mapping policies: per-object (PO), where each reference
 carries its own versioned lock, and per-stripe (PS), where each
 reference hashes to a lock in a fixed array~\cite{dice2006transactional}.
-Our implementation uses a dedicated \texttt{java.lang.Object} monitor per
-reference for ownership acquisition at write time, with commit serialization
-handled by a single global commit lock.
-TL2 detects write conflicts at commit time. Our implementation resolves
-conflicts \emph{eagerly} at the point of write via \texttt{try-acquire!}.
+Rather than adopting either policy directly, our implementation uses a
+dedicated \texttt{java.lang.Object} monitor per reference for ownership
+acquisition at write time, while commit serialization is handled by a
+separate global commit lock.
 
-TL2 maintains only the current committed value of each reference. Our
-implementation extends this with \emph{Multi-Version Concurrency Control
-  (MVCC)}~\cite{bernstein1983}, maintaining a bounded version history per
-reference (see Section~\ref{sec:mvcc-design}).
+On conflict detection, TL2 waits until commit time to discover write conflicts.
+We instead resolve them \emph{eagerly} at the point of write via
+\texttt{try-acquire!}, so a losing transaction aborts immediately rather than
+wasting work through the rest of its body.
+
+Finally, TL2 keeps only the most recently committed value of each reference.
+Our implementation adds \emph{Multi-Version Concurrency Control
+  (MVCC)}~\cite{bernstein1983} on top of this, keeping a bounded version history
+per reference so that readers can always find a consistent snapshot without
+blocking writers (see Section~\ref{sec:mvcc-design}).
 
 \section{Architecture Overview}
 The \texttt{opusdb.atomic.stm} namespace defines four global data structures
@@ -40,13 +46,14 @@ and four constants that coordinate all transactional activity.
         transactions.
 \end{description}
 
+Four constants tune the runtime behaviour:
+
 \begin{description}
   \item[\texttt{max-history} (32)] Maximum size of a version history per
         reference; older entries are discarded on commit.
   \item[\texttt{max-retries} (96)] Maximum retries before throwing
-        unconditionally, corresponding to roughly 2 seconds of cumulative
-        delay, beyond which a still-failing transaction is assumed to be
-        in livelock.
+        unconditionally. At roughly 2 seconds of cumulative delay, a
+        still-failing transaction is assumed to be in livelock.
   \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] Bounds
         of the exponential backoff delay applied after the fourth retry,
         capped at 32\,ms to keep worst-case latency bounded.
@@ -57,7 +64,7 @@ with \texttt{nil} indicating no active transaction context.
 
 \section{Reference and Version History}
 
-A transactional reference is created by \texttt{ref}, which composes the
+A transactional reference is created by \texttt{ref}, which packages the
 initial value, version history, and ownership metadata into a single Clojure
 \texttt{atom}:
 
@@ -77,12 +84,13 @@ initial value, version history, and ownership metadata into a single Clojure
 \end{listing}
 
 The \texttt{:history} vector stores committed versions as
-\texttt{\{:value v :write-point w\}} entries. The \texttt{:lock} field holds a
-dedicated \texttt{Object} monitor used by \texttt{try-acquire!} to serialize
-ownership claims.
+\texttt{\{:value v :write-point w\}} entries. The \texttt{:lock} field is a
+dedicated \texttt{Object} monitor; \texttt{try-acquire!} synchronizes on it
+when competing transactions claim ownership of the same reference.
 
-Version history is bounded by \texttt{max-history = 32}; when a commit would
-exceed this, \texttt{trim-history} discards the oldest entry:
+Version history is bounded by \texttt{max-history = 32}. When a commit would
+push the count beyond this limit, \texttt{trim-history} drops the oldest
+entry before appending the new one:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -199,7 +207,7 @@ exceed this, \texttt{trim-history} discards the oldest entry:
   \label{fig:tx-flow}
 \end{figure}
 
-The following subsections describe this in detail.
+The following subsections walk through each phase in detail.
 
 \subsection{Creation}
 
@@ -226,15 +234,16 @@ and registers the transaction in \texttt{active-tx}:
   \label{lst:make-tx}
 \end{listing}
 
-Both the read-set and write-set use \texttt{IdentityHashMap}, which hashes
-keys by reference rather than value. Transactional references
-are \texttt{atom} objects whose identity is stable for their lifetime while
-their contents change with every commit.
+Both the read-set and write-set use \texttt{IdentityHashMap}, which compares
+keys by reference identity rather than value equality. This matters because
+transactional references are \texttt{atom} objects: their identity is fixed
+for life, but their contents change on every commit.
 
-The read-set caches the \texttt{:write-point} observed at read time alongside
-the value, since the reference's own \texttt{:write-point} is overwritten by
-subsequent commits; the cached value is what read-set validation later
-uses for comparison to detect conflicts.
+The read-set also caches the \texttt{:write-point} observed at read time
+alongside the value. The reference's own \texttt{:write-point} field is
+overwritten by subsequent commits, so without this cache, read-set validation
+would have nothing to compare against when checking for conflicts
+later.
 
 \subsection{Reading}
 \label{sec:reading}
@@ -267,22 +276,24 @@ uses for comparison to detect conflicts.
   \end{minted}
   \caption{Transactional read. The write-set is checked first for
     read-your-writes semantics; the read-set returns the previously cached
-    snapshot; the version history is consulted last.}
+    snapshot; the version history is checked last.}
   \label{lst:deref}
 \end{listing}
 
-The write-set is checked first to provide read-your-writes semantics. The
-read-set is checked second, returning the value cached if it was
-previously resolved to avoid a redundant history search. If neither set contains
-the reference, \texttt{find-entry} searches the version history, returning the
-latest entry whose write point does not exceed the transaction's read point.
-If no such entry exists — for example, because the relevant history has
-already been trimmed — the transaction aborts.
+The write-set is checked first so that a transaction always sees its own
+buffered writes — the standard read-your-writes guarantee. If the reference
+was already read earlier in the same transaction, the cached snapshot in the
+read-set is returned directly, avoiding a redundant traversal of the version
+history. Only when the reference appears in neither set does \texttt{find-entry}
+search the history, returning the latest committed entry whose write point does
+not exceed the transaction's read point. If the history has been trimmed far
+enough that no such entry exists, the transaction aborts and retries with a
+fresh snapshot.
 
 \subsection{Writing}
 
-\texttt{ref-set} buffers a write into the transaction's write-set, first
-acquiring ownership of the target reference via \texttt{try-acquire!}:
+\texttt{ref-set} buffers a write into the transaction's write-set, but only
+after acquiring ownership of the target reference via \texttt{try-acquire!}:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -301,8 +312,8 @@ acquiring ownership of the target reference via \texttt{try-acquire!}:
   \label{lst:ref-set}
 \end{listing}
 
-\texttt{alter} is a convenience wrapper over \texttt{ref-set} that applies a
-function to the current value of a reference:
+\texttt{alter} is a thin convenience wrapper that reads the current value and
+hands it to a caller-supplied function before delegating to \texttt{ref-set}:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -316,12 +327,12 @@ function to the current value of a reference:
 
 \subsection{Committing}
 
-\texttt{commit!} finalizes a transaction. Read-only transactions (empty
-write-set) bypass the global commit lock entirely and commit immediately,
-since their snapshot is guaranteed to be consistent by the version history.
-Write transactions enter the commit lock, perform a second status check to
-detect ownership theft that may have occurred while waiting, validate the
-read-set, and apply writes:
+\texttt{commit!} finalizes a transaction. Read-only transactions — those with
+an empty write-set — bypass the global commit lock entirely and commit
+immediately, since the version history already guarantees their snapshot is
+consistent. Write transactions must enter the commit lock, re-check their
+status (ownership theft can occur while waiting), validate the read-set, and
+then apply their writes:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -338,13 +349,13 @@ read-set, and apply writes:
     (tx/commit! id)))
 \end{minted}
   \caption{Commit protocol. Read-only transactions skip the commit lock;
-    write transactions validate reads before installing writes.}
+    write transactions validate reads before applying writes.}
   \label{lst:commit}
 \end{listing}
 
-\texttt{apply-writes!} increments \texttt{write-point} once, then stamps all
-written references with the resulting commit point and appends them to their
-respective version histories:
+\texttt{apply-writes!} increments \texttt{write-point} a single time and uses
+the resulting value to timestamp every write in the batch. This keeps all
+writes from one commit atomic with respect to readers:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -369,12 +380,13 @@ respective version histories:
 \subsection{Retry and Backoff}
 \label{sec:retry}
 
-On abort, \texttt{next-tx} dispatches rollback hooks, removes the failed
-transaction from \texttt{active-tx}, and creates a fresh transaction with an
-incremented retry count. Backoff is applied only when the retry count exceeds
-4, so the first four retries proceed without delay, avoiding sleep overhead
-for short-lived conflicts. If the retry count reaches \texttt{max-retries}
-$= 96$, the system throws unconditionally to prevent livelock.
+When a transaction aborts, \texttt{next-tx} dispatches its rollback hooks,
+removes it from \texttt{active-tx}, and produces a fresh transaction with an
+incremented retry count. The first four retries carry no sleep penalty —
+short-lived conflicts that resolve quickly should not pay the overhead of a
+\texttt{Thread/sleep} call. Beyond four retries the backoff kicks in, and if
+\texttt{max-retries} $= 96$ is reached the system throws unconditionally to
+avoid what is most likely a livelock.
 
 For retry count $n > 4$, the sleep duration is:
 \begin{equation}
@@ -440,29 +452,31 @@ begins a new transaction loop:
 \end{listing}
 
 \paragraph{Nested transaction semantics.}
-When \texttt{dosync} is called on a thread that already has an active
-transaction bound to \texttt{*tx*}, \texttt{sync} runs the body directly in
-the existing transaction rather than starting a new one. This implements
-\emph{flat nesting}: the inner call joins the outer transaction and shares its
-read-set, write-set, and snapshot. If the inner body raises an abort, it
-propagates to the outer transaction, which retries as a whole. Any
-\texttt{on-commit} or \texttt{on-rollback} hooks registered inside the inner
-body are associated with the outer transaction's identifier. This is the composability
-guarantee described in Section~\ref{sec:intro}: \texttt{withdraw} and \texttt{deposit}
-each wrap their own \texttt{dosync}, yet when called inside an enclosing
-\texttt{dosync} they participate in the same transaction.
-Figure~\ref{fig:tx-flow} illustrates the complete transaction execution flow.
+When \texttt{dosync} is called on a thread that already has a transaction bound
+to \texttt{*tx*}, \texttt{sync} simply invokes the body inside the existing
+transaction rather than opening a new one. This is \emph{flat nesting}: the
+inner call shares the outer transaction's read-set, write-set, and snapshot,
+and any abort in the inner body propagates outward, causing the whole
+transaction to retry. Hooks registered inside the inner body are associated
+with the outer transaction's identifier, so they fire at the right lifecycle
+boundary. This is precisely the composability property described in
+Section~\ref{sec:intro}: \texttt{withdraw} and \texttt{deposit} each contain
+their own \texttt{dosync}, yet inside an enclosing \texttt{dosync} they
+participate in a single atomic transaction.
+Figure~\ref{fig:tx-flow} illustrates the complete execution flow.
 
 \section{Conflict Resolution}
 \label{sec:conflict-resolution}
 
-Conflicts are resolved eagerly at write time via \texttt{try-acquire!}, which
-claims ownership of a reference under that reference's per-ref monitor. The
-resolution follows a \emph{custom} ownership protocol: when two transactions
-conflict, the younger transaction (higher identifier) preempts the older owner,
-which aborts and retries. The \texttt{max-retries} bound in
-Section~\ref{sec:retry} prevents a repeatedly preempted transaction from
-retrying indefinitely.
+Rather than deferring conflict detection to commit time, the system resolves
+write conflicts at the moment a transaction first touches a reference.
+\texttt{try-acquire!} claims ownership under that reference's per-ref monitor,
+using an ownership protocol that favours the younger transaction: a transaction
+with a higher identifier preempts the current owner, which is marked aborted
+and will notice on its next \texttt{check-active!} call. An older transaction
+that loses the contest aborts itself immediately and retries. The
+\texttt{max-retries} bound in Section~\ref{sec:retry} ensures a repeatedly
+preempted transaction does not spin indefinitely.
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -492,36 +506,37 @@ retrying indefinitely.
   \label{lst:try-acquire}
 \end{listing}
 
-Four cases arise. If the reference has no owner, the claimer acquires it
-immediately. If the claimer already owns the reference, the call is \emph{void}.
-If the current owner is older (lower identifier), the claimer marks it
-\textsc{Aborted} in \texttt{active-tx} and assigns itself as the new owner.
-If the current owner is younger (higher identifier), the claimer returns
-\texttt{false} and aborts, allowing the younger owner to proceed.
+The four \texttt{cond} branches cover the complete ownership space. An
+unowned reference is claimed immediately. A reference already owned by the
+same transaction is a no-op — this happens when \texttt{ref-set} is called
+more than once on the same ref. If the existing owner is older, the claimer
+atomically marks it \textsc{Aborted} in \texttt{active-tx} and takes over.
+If the existing owner is younger, the claimer yields: it returns \texttt{false}
+and aborts, giving the younger transaction room to finish.
 
-The aborted owner detects its invalidation at the next \texttt{check-active!}
-call, which is invoked before every critical operation, and terminates without
-committing partial state.
+The aborted owner detects its own invalidation the next time
+\texttt{check-active!} runs — which is before every critical operation — and
+exits without committing any partial state.
 
 \section{MVCC Design}
 \label{sec:mvcc-design}
 
 The system extends TL2 with multi-version concurrency
-control~\cite{bernstein1983} by maintaining a bounded version history.
-Each history entry records a committed value together with the write
-point at which it was committed. On a successful commit at write point $w_c$,
-the history of each written reference undergoes the transition:
+control~\cite{bernstein1983} by maintaining a bounded version history per
+reference. Each entry in the history records a committed value and the
+write point at which it was committed. When a transaction commits at write
+point $w_c$, the history of each written reference is updated as:
 \[
   \text{hist}_{\text{new}}(r) = \text{trim}_{32}\!\left(
   \text{hist}_{\text{old}}(r) \cup \bigl\{ (w_c,\; WS[r]) \bigr\}
   \right)
 \]
-where $\text{trim}_{32}$ discards the oldest entry if the cardinality exceeds
+where $\text{trim}_{32}$ drops the oldest entry if the count would exceed
 \texttt{max-history}.
 
-A transaction with read point $w_r$ retrieves the value of reference $r$ via
-\texttt{find-entry}, which scans the history from newest to oldest and returns
-the first entry whose write point does not exceed $w_r$:
+A transaction with read point $w_r$ retrieves the visible value of reference
+$r$ via \texttt{find-entry}, which walks the history from newest to oldest
+and returns the first entry whose write point does not exceed $w_r$:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -538,25 +553,29 @@ the first entry whose write point does not exceed $w_r$:
   \label{lst:find-entry}
 \end{listing}
 
-This design decouples readers from writers: a reader at $w_r$ and a concurrent
-writer committing at $w_c > w_r$ do not block one another, because the reader
-accesses a snapshot predating the write, so neither side waits on the other
-even under read-dominated workloads.
+The practical effect is that readers and writers do not block each other. A
+reader at $w_r$ simply picks up a snapshot that predates any concurrent
+writer's commit, so neither side ever has to wait on the other. This is
+the property that makes the read-heavy benchmark in Section~\ref{sec:read-write-heavy}
+scale so strongly — readers bypass the commit-lock path.
 
-A transaction whose read point predates the oldest retained history entry finds
-no valid snapshot and aborts immediately, retrying with a fresh read point.
+If a transaction's read point falls below the oldest retained entry, no valid
+snapshot exists and the transaction aborts immediately, retrying with a fresh
+read point.
 
 \section{Transactional Event System}
 
-Side-effects cannot safely appear inside transactions, since a transaction body
-may be retried an arbitrary number of times before committing. The system
-addresses this through a transactional event system in the
-\texttt{opusdb.atomic.tx-hooks} namespace.
+Side-effects are unsafe inside a transaction body because the body may execute
+many times before a commit succeeds. Logging, sending a notification, or
+writing to an external system on the first attempt would produce
+duplicate effects on every subsequent retry. The transactional event system
+in the \texttt{opusdb.atomic.tx-hooks} namespace addresses this by deferring
+handler execution to a well-defined lifecycle boundary.
 
-Two hooks are provided: \texttt{on-commit} registers a handler to be
-dispatched once after a successful commit; \texttt{on-rollback}
-registers a handler to be dispatched on each abort, enabling cleanup before
-retrying:
+Two hooks are provided. \texttt{on-commit} schedules a handler to run exactly
+once after a successful commit. \texttt{on-rollback} schedules a handler to
+run on each abort before the next retry, which is useful for cleanup or
+diagnostic logging:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -575,9 +594,9 @@ retrying:
   \label{lst:hook-registration}
 \end{listing}
 
-The underlying implementation maintains two \texttt{ConcurrentHashMap}
-instances indexed by transaction ID, one for commit handlers and one for
-rollback handlers:
+The underlying storage uses two \texttt{ConcurrentHashMap} instances, one
+for commit handlers and one for rollback handlers, both indexed by transaction
+ID:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
@@ -596,10 +615,10 @@ rollback handlers:
   \label{lst:event-tables}
 \end{listing}
 
-Handler accumulation uses \texttt{ConcurrentHashMap.compute}, which is atomic,
-so no additional locking is required. Dispatch is triggered by \texttt{commit!}
-and \texttt{rollback!}; on commit, rollback handlers for the same transaction
-are also removed, since they will not be needed anymore:
+\texttt{ConcurrentHashMap.compute} is atomic, so handler accumulation needs
+no additional locking. Dispatch happens at the commit and rollback boundaries;
+on a successful commit the rollback handlers for that transaction are also
+discarded, since they will never be needed:
 
 \begin{listing}[H]
   \begin{minted}{clojure}
