@@ -1,43 +1,61 @@
 \chapter{Conclusion}
 
 \section{Summary}
-This thesis presented the design and implementation of a Software Transactional
-Memory system in Clojure that enables registering side-effects at
-commit and rollback boundaries. The system was formalized and shown to satisfy
-opacity~\cite{guerraoui2007} (a correctness guarantee).
 
-Evaluation showed strong throughput under read-heavy workloads and scalable
-performance under high contention, while write-heavy workloads exposed commit-lock
-serialization as the primary bottleneck. The transactional event system added negligible
-overhead of approximately $0.22\,\mu\text{s}$, roughly 14\% of the baseline commit cost,
-suggesting that side-effect handling can be incorporated into a transactional model
-without significant performance penalty.
+The goal of this work was to build a Software Transactional Memory system in
+Clojure that fills a specific gap in the existing ecosystem: the inability to
+safely coordinate side-effects such as logging or notifications at transaction
+boundaries. The result is an STM implementation based on a variation of TL2,
+extended with MVCC and a transactional event system, and accompanied by a
+formal proof that every history the system produces satisfies
+opacity~\cite{guerraoui2007}.
+
+The evaluation produced a mixed but informative picture. Read-heavy workloads
+scale well — throughput reaches 1.97M\,TPS at 12 threads — because read-only
+transactions bypass the commit lock entirely and proceed in genuine parallel.
+High-contention workloads also scale, thanks to the ownership protocol catching
+conflicts eagerly at write time rather than at commit. Write-heavy workloads,
+however, do not scale: the global commit lock serialises all write commits, and
+adding threads past the point of saturation hurts throughput rather than helping
+it. The transactional event system itself adds only 0.22\,$\mu$s per commit,
+roughly 14\% of the baseline, which suggests that the mechanism is cheap enough
+not to discourage use in practice.
 
 \section{Limitations and Future Work}
 \label{sec:future}
 
 \paragraph{Global commit lock.}
-Write transactions are serialized during commit through a single global commit lock,
-which was identified as the primary bottleneck. Replacing it with per-stripe
-commit locks would allow write transactions that map to different stripes to commit in parallel.
+The most pressing limitation is the global commit lock. As Section~\ref{sec:bottlenecks}
+shows, it is the sole source of thread blocking in write-heavy scenarios, and
+total wait time grows faster than thread count as the lock saturates. The
+natural fix is to replace the single lock with a fixed array of per-stripe
+locks, mapping each reference to a stripe via hashing — the PS policy from
+TL2~\cite{dice2006transactional}. Write transactions whose write-sets map to
+different stripes could then commit in parallel, recovering the throughput lost
+to serialisation without changing how individual commits work internally.
 
 \paragraph{Dynamic version history sizing.}
-The benchmarks in Section~\ref{sec:history-sweep} indicate that a fixed global history
-bound is too coarse for production use. Under the low-contention 20-account bank transfer workload,
-trim aborts do not occur. In contrast, under concurrent short write transactions and long-running read
-transactions, rapid version history growth may evict snapshots required by active readers, resulting
-in trim aborts.
-
-This suggests that the history size should adapt, as implemented
-in Clojure's STM: each reference tracks its own trim-abort rate and increases its history
-when aborts are observed. This eliminates the need to manually manage \texttt{max-history}
-and reduces abort rates across general workloads.
+The history-sweep results in Section~\ref{sec:history-sweep} show that a fixed
+global bound works adequately for the bank transfer workload — trim aborts
+never occur — but this is not guaranteed to hold in general. Workloads that
+combine short, frequent writes on a small number of references with long-running
+read transactions can exhaust the history window before a reader gets to it,
+causing trim aborts that would not occur with a larger history. The problem
+with simply raising \texttt{max-history} is the GC overhead visible at 12
+threads for sizes 128 and 256. Clojure's own STM handles this more gracefully
+by letting each reference track its own abort rate and grow its history
+independently when trim aborts are observed. Adopting a similar per-reference
+adaptive scheme would remove the need to tune \texttt{max-history} manually
+and reduce abort rates in workloads that the current fixed bound handles poorly.
 
 \paragraph{Lifecycle hook granularity.}
-The current model exposes only \texttt{on-commit} and \texttt{on-rollback} hooks.
-Extending it with \texttt{before-commit}, \texttt{after-commit},
-\texttt{before-retry}, and \texttt{after-retry} phases would enable more advanced use cases.
-In particular, a \texttt{before-commit} hook would support write-ahead logging,
-executed after read-set validation and before modifications are applied.
-This would allow the pending write set to be appended to a persistent log, providing durability
-for side-effecting transactions.
+The current hook model offers two attachment points: \texttt{on-commit} and
+\texttt{on-rollback}. For most use cases this is sufficient, but some scenarios
+call for finer control. A \texttt{before-commit} hook — executed after
+read-set validation but before writes are applied — would make write-ahead
+logging possible: the pending write set could be appended to a persistent log
+while the transaction still holds the commit lock, giving durability guarantees
+that the current model cannot express. Additional phases such as
+\texttt{after-commit}, \texttt{before-retry}, and \texttt{after-retry} would
+similarly open up use cases that require acting at specific points in the
+transaction lifecycle rather than just at its terminal boundaries.
