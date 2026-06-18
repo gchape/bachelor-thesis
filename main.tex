@@ -74,10 +74,7 @@
   {\fontsize{12}{15}\selectfont
     Bachelor's Thesis Supervisor \\[6pt]
     Zaal Beriashvili             \\[4pt]
-    Lecturer                     \\[14pt]
-    Bachelor's Thesis Co-Supervisor \\[6pt]
-    Dr.\ Markus Neuhauser           \\[4pt]
-    Professor \par}
+    Lecturer                     \\[14pt]}
 
   \vfill
   {\fontsize{12}{15}\selectfont Kutaisi, 2026 \par}
@@ -99,7 +96,7 @@ accordance with academic standards.
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-Clojure's native Software Transactional Memory (STM) provides no safe mechanism for
+Clojure's own Software Transactional Memory (STM) provides no mechanism for
 coordinating side-effects such as logging, or sending notifications.
 This thesis presents the design, formal analysis, and implementation of an STM system
 in Clojure, that addresses this gap.
@@ -113,7 +110,7 @@ including aborted ones, always observes a consistent state.
 
 Our evaluation demonstrates throughput of 1,969,463 transactions per second
 at twelve threads under read-heavy workloads, and scalable performance under high
-contention. The transactional event system introduces an overhead of approximately
+contention. The transactional event system introduces an overhead of
 $0.22\,\mu\text{s}$ per commit, roughly 14\% of the baseline commit cost,
 showing that side-effect handling can be added to a transactional model
 without meaningful performance penalty.

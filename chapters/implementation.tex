@@ -276,9 +276,8 @@ read-set is checked second, returning the value cached if it was
 previously resolved to avoid a redundant history search. If neither set contains
 the reference, \texttt{find-entry} searches the version history, returning the
 latest entry whose write point does not exceed the transaction's read point.
-If no such entry exists for example, because the reference was
-created after the snapshot and the relevant history has already been trimmed,
-the transaction aborts.
+If no such entry exists — for example, because the relevant history has
+already been trimmed — the transaction aborts.
 
 \subsection{Writing}
 
@@ -541,8 +540,8 @@ the first entry whose write point does not exceed $w_r$:
 
 This design decouples readers from writers: a reader at $w_r$ and a concurrent
 writer committing at $w_c > w_r$ do not block one another, because the reader
-accesses a snapshot predating the write. Readers never block writers and writers
-never block readers, preserving throughput under read-dominated workloads.
+accesses a snapshot predating the write, so neither side waits on the other
+even under read-dominated workloads.
 
 A transaction whose read point predates the oldest retained history entry finds
 no valid snapshot and aborts immediately, retrying with a fresh read point.

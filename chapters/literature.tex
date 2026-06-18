@@ -2,19 +2,18 @@
 
 \section{Introduction to Concurrency and Transactional Memory}
 
-A central challenge in concurrent programming is ensuring the correctness of shared state,
-requiring synchronization mechanisms that control how threads access and modify it.
+In concurrent systems, shared state must be protected to ensure correctness.
 
-Dijkstra~\cite{dijkstra1968} introduced semaphores as a low-level primitive for guarding
+Dijkstra~\cite{dijkstra1968} introduced semaphores as a low-level primitive for protecting
 critical sections. A semaphore is a non-negative integer controlled by two atomic operations:
 P (\emph{passeren}, to pass) and V (\emph{vrijgeven}, to release). The P operation decrements
 the semaphore when its value is positive and otherwise blocks, while the V operation increments
-the semaphore and may wake a waiting thread. Because P and V are independent operations with
-nothing enforcing that each acquisition is matched by a corresponding release, it is easy to
-accidentally forget one.
+the semaphore and may wake a waiting thread. Because P and V are independent operations, with
+nothing enforcing that each acquisition is matched by a respective release, it is easy to
+forget one.
 
-In addition, every exit from a critical section requires manually releasing all acquired semaphores;
-failing to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
+In addition, an exit from a critical section may require releasing all acquired
+semaphores; failing to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -22,7 +21,7 @@ failing to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
   (.acquire (:lock from))
   (.acquire (:lock to))
   ;; Exception occurring after lock acquisition
-  ;; prevents proper lock release.
+  ;; prevents the locks from being released.
   (when (<= amount 0)
     (throw (Exception. "Invalid transfer amount")))
   (when (< (:balance from) amount)
@@ -38,9 +37,9 @@ failing to do so causes deadlock, as illustrated in Listing~\ref{lst:semaphore}.
   \label{lst:semaphore}
 \end{listing}
 
-To address these limitations, Brinch Hansen and Hoare introduced monitors~\cite{hoare1974}.
+To address these limitations, Hoare introduced monitors~\cite{hoare1974}.
 A monitor operates on a single lock that is automatically acquired upon entry and released
-upon every exit, whether through a normal return or an exception.
+upon every exit, whether normal or exceptional.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -60,21 +59,18 @@ upon every exit, whether through a normal return or an exception.
   \label{lst:monitor}
 \end{listing}
 
-However, monitors do not eliminate all concurrency challenges. Coarse-grained
-locking reduces parallelism and provides no rollback semantics.
-If an exception occurs after partial state modification, those intermediate
-updates remain visible unless explicitly reverted by the programmer.
+However, monitors do not eliminate concurrency challenges. Coarse-grained
+locking\footnote{A synchronization strategy where a single lock
+  protects a large portion of data.} reduces
+parallelism and provides no rollback semantics. If an exception occurs after
+partial state modification, those intermediate updates remain visible unless
+manually undone by the programmer.
 
-These limitations motivated the search for mechanisms that allow programmers to express
-atomic intent declaratively. Lomet~\cite{lomet1977} argued that programmers should be
+These limitations motivated the search for mechanisms that allow programmers to express atomicity declaratively.
+Lomet~\cite{lomet1977} proposed that programmers should be
 able to specify that a sequence of operations must execute atomically without explicitly
 managing synchronization details, an idea that was later realized in transactional
 memory systems.
-
-Transactional Memory (TM) was inspired by databases and the ACID properties:
-atomicity, consistency, isolation, and durability, first formalized by \citeauthor{haerder1983}~\cite{haerder1983}.
-While durability is generally not required for in-memory transactions,
-the remaining guarantees provide a strong conceptual foundation for TM.
 
 \subsection{Hardware Transactional Memory}
 
@@ -140,24 +136,26 @@ Two conflict classes can cause \textsc{Validate} or \textsc{Commit} to fail:
 
 \subsection{Software Transactional Memory}
 
-Shavit and Touitou~\cite{shavit1995} first demonstrated that transactional
-semantics could be realised in software without hardware support, establishing
-the conceptual foundation for subsequent STM research. However, their approach
-was restricted to \emph{static transactions}.%
+Shavit and Touitou~\cite{shavit1995} first introduced a software transactional
+memory model and a corresponding implementation algorithm without hardware support,
+establishing the conceptual foundation for subsequent STM research. However, their
+approach was restricted to \emph{static transactions}.%
 \footnote{Transactions which access a pre-determined sequence of locations.}
-As \citeauthor{dice2006transactional} observe, ``the dominant trend in
-transactional memory design moved toward transactions that are unbounded and
-dynamic.''~\cite{dice2006transactional}
+\citeauthor{dice2006transactional} observe that the dominant trend in
+transactional memory design has been toward transactions that are
+\emph{unbounded}, placing no limit on the number of locations a transaction
+may access, and \emph{dynamic}, meaning those locations are determined only
+at runtime rather than fixed in advance~\cite{dice2006transactional}.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
-; Static: data set fixed before execution
+; Static: data declared before execution
 (defn transfer [account-a account-b amount]
   (dosync
     (alter account-a - amount)
     (alter account-b + amount)))
 
-; Dynamic: data set discovered at runtime
+; Dynamic: data discovered at runtime
 (dosync
   (let [node @head]
     (ref-set head @(:next node))))
@@ -165,21 +163,21 @@ dynamic.''~\cite{dice2006transactional}
   \caption{Static vs.\ dynamic transactions.}
 \end{listing}
 
-Since the data set must be declared upfront, any transaction that discovers its
+Since the data must be known statically, any transaction that discovers its
 memory locations at runtime (such as traversing a linked list or walking a tree)
 cannot be expressed in Shavit and Touitou's model. This restriction motivated later
-STM designs. It is also directly relevant to the present system: Clojure programs
-routinely discover their data sets at runtime, selecting accounts at random as in
-the bank transfer benchmark, or following a chain of \texttt{deref} calls through a
-dynamic structure. Consequently, static transactions are an unsuitable foundation,
-and the system described in this thesis is dynamic.
+STM designs. It is also directly relevant to our system: Clojure programs regularly
+discover their data at runtime, selecting accounts at random as in the bank
+transfer benchmark, or following a chain of \texttt{deref} calls through dynamic
+data structures. Static transactions are therefore an unsuitable foundation,
+and the system we present is fully dynamic.
 
 \subsection{Concurrency Control}
 
 Transactional Memory systems must ensure that concurrent transactions produce
 results equivalent to a serial execution. Achieving such serializability requires
 resolving conflicts between transactions. Two broad strategies are commonly employed:
-pessimistic control, which prevents conflicts through proactive lock acquisition,
+pessimistic control, which prevents conflicts through eager lock acquisition,
 and optimistic control, which permits speculative execution and detects conflicts
 during validation or commit. The following subsections examine these approaches and
 their implications for STM design.
@@ -196,16 +194,12 @@ $T_2$ updating shared variables $A$ and $B$:
   \item $T_2$: $W(A)\ W(B)$
 \end{itemize}
 
-These operations create read-write ($R(A) \times W(A)$) and write-write
-($W(B) \times W(B)$) conflicts. Strict two-phase locking (S2PL) prevents
-such conflicts by requiring transactions to acquire shared locks (s-locks)
-for read operations and exclusive locks (x-locks) for write operations,
-retaining all locks until commit or rollback~\cite{bernstein1987}.
-Whichever transaction acquires the required lock first proceeds, while the
-other must wait. If $T_1$ acquires an s-lock on $A$, $T_2$ cannot obtain the
-x-lock required to write $A$ until $T_1$ completes. Likewise, if either
-transaction acquires an x-lock on $B$, the other is prevented from accessing
-$B$ until the lock is released.
+These operations introduce read-write ($R(A) \times W(A)$) and write-write
+($W(B) \times W(B)$) conflicts. Strict two-phase locking (S2PL) prevents such
+conflicts by requiring shared locks (s-locks) for reads and exclusive locks
+(x-locks) for writes, which are retained until commit or rollback~\cite{bernstein1987}.
+If $T_1$ acquires an s-lock on $A$, $T_2$ cannot obtain the x-lock required to
+modify $A$ until $T_1$ completes, and similarly for $B$.
 
 This behavior follows from two fundamental properties of S2PL:
 
@@ -215,22 +209,18 @@ This behavior follows from two fundamental properties of S2PL:
 \end{enumerate}
 
 
-Although S2PL guarantees serializability, holding locks until transaction
-completion reduces concurrency. An intuitive optimization would be to release
-locks early once data is no longer required. However, early lock release
-violates serializability. For example, if $T_1$ reads and unlocks $A$
-before later accessing $B$, transaction $T_2$ may interleave by modifying $B$
-and committing in between, producing a non-serializable schedule.
+Although S2PL guarantees serializability, holding locks until transaction completion reduces concurrency.
+Releasing locks early would improve performance but violates serializability. For example, if $T_1$
+reads and unlocks $A$ before accessing $B$, $T_2$ may interleave by modifying $B$ and committing in between,
+producing a non-serializable schedule.
 
-The blocking behavior of pessimistic synchronization motivated the exploration
-of optimistic concurrency control, where transactions execute speculatively
-and validate consistency only at commit time. Multi-Version Concurrency Control
-(MVCC) is a widely adopted realization of this approach~\cite{bernstein1983},
-and notably forms the basis of Clojure's STM~\cite{clojureRefs}.
+This blocking behavior motivated optimistic concurrency control, where transactions execute speculatively
+and validate only at commit time. Multi-Version Concurrency Control (MVCC) is a realization of this
+approach~\cite{bernstein1983} and forms the basis of Clojure’s STM~\cite{clojureRefs}.
 
 \subsubsection{Multi-Version Concurrency Control (MVCC)}
 
-In a multiversion concurrency control, each write on a data item
+In a multiversion concurrency control, each write on a data
 produces a new version rather than overwriting it~\cite{bernstein1983}.
 Each version is timestamped with the commit time of the transaction that wrote
 it.
@@ -251,14 +241,12 @@ writing $O=30$. A read-only transaction\footnote{A transaction that performs onl
 
 Since read-only transactions have a consistent view of the data, they never
 acquire locks and therefore never have to wait~\cite{bernstein1983}.
-Clojure's adoption of MVCC for its STM system~\cite{clojureRefs} showed that
-MVCC could be effectively applied beyond database systems, influencing the
-design of the system in this thesis. The key design implication is that MVCC
+The key design implication is that MVCC
 separates the concern of read consistency from the concern of write
 serialization, that makes MVCC well-suited to read-dominated workloads, and it
 is precisely the property exploited in
 Section~\ref{sec:read-write-heavy}, where 90\% read-only transactions achieve
-the highest throughput of any evaluated scenario by bypassing the commit lock
+the highest throughput of any evaluated scenario by avoiding the commit lock
 entirely.
 
 \subsubsection{Transactional Locking II (TL2)}
@@ -338,18 +326,18 @@ Figure~\ref{fig:tl2-write} illustrates the complete write transaction protocol.
 \end{figure}
 
 TL2's separation of read-set and write-set, together with its global
-version clock, provides the foundation for versioned data items. While
-TL2 itself retains only the most recent version of each item, the
-addition of version history would yield a design closely aligned with
+version clock, provides the foundation for versioned data. While
+TL2 itself keeps only the most recent version of each item, the
+addition of version history would produce a design aligned with
 MVCC. The design decisions and extensions adopted in this thesis are
 discussed in Chapter~\ref{ch:implementation}.
 
 \subsubsection{Synchronization Anomalies in STM}
 
 Parri~\cite{parriTmIntro} presents a taxonomy of synchronization anomalies in
-Software Transactional Memory. Because the STM system presented in this thesis
-is based on optimistic MVCC, dirty reads are excluded by design. Two
-anomalies from Parri's taxonomy remain relevant:
+Software Transactional Memory. Because our STM system is based on optimistic MVCC,
+dirty reads are excluded by design.
+Two anomalies from Parri's taxonomy remain relevant:
 
 \begin{itemize}
   \item \textbf{Non-Repeatable Read}: a transaction reads the same
@@ -358,7 +346,7 @@ anomalies from Parri's taxonomy remain relevant:
         overlapping locations and one update is silently overwritten.
 \end{itemize}
 
-In the system presented in this thesis, non-repeatable reads are addressed
+In our system, non-repeatable reads are addressed
 through Multi-Version Concurrency Control (MVCC) and read-set validation,
 while intermediate lost updates are prevented through ownership-based conflict
 resolution. These mechanisms are discussed further in
@@ -366,10 +354,10 @@ Sections~\ref{sec:reading} and~\ref{sec:conflict-resolution}.
 
 \section{Existing Clojure STM Approaches and Limitations}
 
-Clojure's STM exposes a concise API built around \texttt{dosync}, a macro
-executing a function body, in which reads and writes to \texttt{Refs} are
-executed atomically~\cite{clojureRefs}. The implementation is based on MVCC,
-implemented primarily within the \texttt{LockingTransaction} class.
+Clojure's STM exposes a concise API built around \texttt{dosync}, with
+a function body, in which reads and writes to \texttt{Refs} are
+executed atomically~\cite{clojureRefs}. The implementation is within
+the \texttt{LockingTransaction} class.
 Table~\ref{tab:clojure-stm} summarizes the key internal components of
 \texttt{LockingTransaction} and \texttt{Ref}.
 
@@ -406,23 +394,21 @@ is incremented and the transaction retries, triggering an expansion of the
 \texttt{Ref}'s history on the next attempt. A write calls \texttt{doSet},
 which acquires a write lock on the \texttt{Ref}, adds it to \texttt{sets}, and
 buffers the new value in \texttt{vals} without modifying shared memory until
-commit.
+commit~\cite{jensen2016}.
 
 However, in contrast to its otherwise comprehensive STM design, transactions do
 not support side-effects because they may be retried multiple times before
 committing. Any side-effect performed within a transaction would therefore be
-repeated on each retry. This design choice leaves no mechanism for coordinating
-side effects with transaction outcomes.
+repeated on each retry.
 
 \citeauthor{jensen2016}~\cite{jensen2016} addressed this by forking the
 Clojure runtime and extending \texttt{LockingTransaction}, introducing
 hooks such as \texttt{on-commit} and \texttt{after-commit}. While
 effective, this approach couples the extension tightly to the runtime.
 
-The system presented in this thesis takes a different approach. Rather than
-modifying \texttt{LockingTransaction}, side-effect coordination is implemented
-at the language level. This avoids dependence on a particular Clojure runtime
-while providing commit and rollback semantics.
+Rather than modifying \texttt{LockingTransaction}, we implement side-effect
+support within our STM system at the language level. This avoids dependence
+on a particular Clojure version while providing commit and rollback semantics.
 
 Furthermore, Section~\ref{subsec:opacity-proof} shows that the resulting
 system satisfies opacity~\cite{guerraoui2007}, providing formal correctness

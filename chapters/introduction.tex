@@ -3,11 +3,10 @@
 \section{Background}
 \label{sec:intro}
 
-In computer science, concurrency makes it difficult to reason about
-program state. In a sequential execution model, state updates happen in a well-defined order,
-and each operation observes a consistent state produced by its predecesso.
-In contrast, in concurrent systems, multiple sequences of operations may interleave,
-and their interactions can lead to non-deterministic outcomes.
+In sequential programs, state updates occur in a well-defined order, and each operation
+observes a consistent state produced by previous operations. In contrast, concurrent 
+programs allow multiple sequences of operations to interleave, making it harder to 
+reason about program state.
 
 Consider a simple example in which two threads concurrently increment a shared counter:
 
@@ -48,23 +47,24 @@ this through mutual exclusion, ensuring that only one thread may access a
 critical section at a time. Locks and monitors are among the most widely used
 approaches for enforcing such guarantees.
 
-While fine-grained synchronization can provide thread safety, ensuring its correctness
-is often difficult and error-prone.  Locks must be manually acquired and released, and
-as systems grow  in complexity, preserving program invariants in the presence of exceptions
-becomes  increasingly difficult. Exceptions, in particular, can cause locks to be
-held indefinitely, potentially deadlocking the system.
+While these approaches can provide thread safety, ensuring correctness is
+difficult and  error-prone: locks must be manually acquired and released,
+and as systems grow in complexity, preserving program invariants in the
+presence of exceptions becomes sophisticated. Exceptions, in
+particular, can cause locks to be held indefinitely, potentially deadlocking the system.
 
 To address these challenges, Lomet~\cite{lomet1977} proposed that programmers
 should be able to declaratively specify that a block of code be executed atomically,
 shifting responsibility for synchronization from the programmer to the underlying
-system. Software Transactional Memory~(STM) is one realization of this idea: a sequence
+system. Software Transactional Memory~(STM) is a manifestation of this idea: a sequence
 of memory operations is treated as a transaction that either commits exclusively or
 has no effect at all.
 
-Beyond atomicity, STM offers an important advantage over lock-based mechanisms:
-\emph{composability}. Consider a bank transfer: withdraw from one account and deposit
-into another. Both operations can be made individually atomic, but their composition
-is not:
+In addition, STM offers an important advantage: \emph{composability}. Consider a
+bank transfer consisting of a withdrawal from one account and a deposit into another.
+Although each operation can be made atomic individually, their composition is not
+necessarily atomic; another thread may observe an inconsistent intermediate state
+between the two operations.
 
 \begin{listing}[ht]
   \begin{minted}{clojure}
@@ -75,9 +75,8 @@ is not:
   \caption{Non-composable transfer}
 \end{listing}
 
-\noindent Between the two operations, another thread may observe an inconsistent
-intermediate state. Ensuring that the transfer itself executes atomically requires
-additional synchronization. With STM, however, both operations can be composed into
+Ensuring that the transfer itself executes atomically requires
+additional synchronization. With STM, however, both operations are composed into
 a single transaction and committed atomically:
 
 \begin{listing}[ht]
@@ -90,13 +89,12 @@ a single transaction and committed atomically:
   \caption{Composable transfer with STM}
 \end{listing}
 
-\noindent If any conflict occurs mid-execution, the entire transaction is
-retried and no intermediate state is ever visible to other threads. Larger
-atomic operations can be constructed naturally from smaller ones, without
-the programmer reasoning explicitly about correctness.
+\noindent If conflicts occur mid-execution, the entire transaction is
+retried and no intermediate state is ever visible to other threads.
+As a result, larger atomic operations can be constructed from smaller ones.
 
 \section{Problem Statement}
-The Clojure STM documentation states that because transactions are retried
+The Clojure documentation states that because transactions are retried
 on conflict, side-effecting operations are disallowed:
 
 \begin{quote}
@@ -104,21 +102,21 @@ on conflict, side-effecting operations are disallowed:
   transactions, since transactions will be retried~\cite{clojureRefs}.
 \end{quote}
 
-However, some applications inherently require side effects, such as logging,
-sending notifications, or interacting with external systems. Clojure's STM
-provides no safe mechanism for coordinating these effects with transaction
-outcomes.
+However, some applications by design require side effects, such as logging,
+or sending notifications.
 
-A direct approach would be to extend Clojure's existing STM with side-effect hooks.
-However, extending the native STM is not straightforward. Its core functionality is
-implemented in \texttt{LockingTransaction.java} within the \texttt{clojure.lang} package,
-and the key methods \texttt{doGet}, \texttt{doSet}, and \texttt{run} have package-private
-visibility, making them inaccessible outside the package. Prior work addressed this limitation
-by forking the Clojure~\cite{jensen2016} and extending it. However, this approach couples the
-solution to a runtime and increases the maintenance burden.
+A direct approach to this problem would be to extend Clojure's existing STM
+with side-effect hooks. However, extending the native STM is not straightforward.
+Its core functionality is encapsulated in \texttt{LockingTransaction.java} within the
+\texttt{clojure.lang} package, and the key methods \texttt{doGet}, \texttt{doSet},
+and \texttt{run} have package-private visibility, making them inaccessible outside the package.
+Prior work addressed this limitation by forking Clojure~\cite{jensen2016} and modifying
+its runtime. However, this approach couples the solution to a specific release and
+increases maintenance effort.
 
-This project designs and implements an STM system in Clojure from the ground up at the
-language level. The implementation is a variation of the TL2 algorithm~\cite{dice2006transactional}.
+We take an alternative approach by designing and implementing an STM system in Clojure
+from the ground up at the language level.
+The implementation is based on a variation of the TL2 algorithm~\cite{dice2006transactional}.
 
 \noindent Table~\ref{tab:public-api} summarizes the project API. All
 transactional operations are in the \texttt{opusdb.atomic.stm} namespace; side-effect hooks

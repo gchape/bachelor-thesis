@@ -117,6 +117,11 @@ with an incremented $id$, subject to retry limits.
 \section{Commit Protocol}
 \label{sec:commit-protocol}
 
+The validation-then-write structure below follows Transactional Locking
+II~\cite{dice2006transactional}, adapted here to the write-point history model
+of Section~\ref{ch:formal-model} rather than a single global version per
+reference.
+
 A transaction $T$ with a non-empty write-set ($\operatorname{dom}(WS) \neq
   \emptyset$) commits under a global commit lock. Upon entering the commit phase,
 the system checks $\sigma_T$. If $\sigma_T = \textsc{Aborted}$, the transaction
@@ -145,19 +150,17 @@ for each $r \in \operatorname{dom}(WS)$,
   \text{owner}(r) \gets \bot
 \]
 
-Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) skip the commit
-lock entirely, as they are consistency is guaranteed by versioned reads.
+Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) avoid the commit
+lock entirely, as their consistency is guaranteed by versioned reads.
 
 \section{Opacity}
 \label{sec:safety-opacity}
 
-Opacity, introduced by Guerraoui and Kapalka~\cite{guerraoui2007}, is the
-standard correctness criterion for STM systems. It requires that every
-transaction, including those that abort, always observes a consistent state
-of memory. We now show that the system defined in the preceding sections
-satisfies this criterion, grounding the proof in the execution model already
-established: write points, the snapshot function $\mathit{snap}$, and the
-commit protocol.
+Opacity~\cite{guerraoui2007} is the correctness criterion most commonly used
+for STM systems: every transaction, including those that abort, must always
+observe a consistent state of memory. This section shows the system defined
+above satisfies opacity, using the write points, the snapshot function
+$\mathit{snap}$, and the commit protocol already established.
 
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}
@@ -245,21 +248,20 @@ element contains no live transactions by construction.
   \end{enumerate}
 \end{definition}
 
-Condition~2 is what distinguishes opacity from a database serializability:
-legality is required even of aborted and live transactions,
-not justcommitted ones.
+Condition~2 is what separates opacity from database serializability: legality
+is required of aborted and live transactions too, not only committed ones.
 
 \subsection{Proof of Opacity}
 \label{subsec:opacity-proof}
 
 \begin{remark}[Version trimming and partial reads]
   \label{rem:trimming}
-  The bounded version history (Section~\ref{sec:mvcc-design}) introduces one
-  additional abort case: if every retained version of $r$ has a write point
-  exceeding $w_r(T)$, then $\mathit{snap}(r, w_r(T))$ is undefined and $T$
-  aborts before any read is recorded in $RS$. Since no read is produced,
-  Lemma~\ref{lem:snapshot-legal} below applies trivially to the empty (or
-  partial) read set, and the opacity argument is unaffected.
+  The bounded version history (Section~\ref{sec:mvcc-design}) adds one more
+  abort case: if every retained version of $r$ has a write point exceeding
+  $w_r(T)$, then $\mathit{snap}(r, w_r(T))$ is undefined and $T$ aborts before
+  any read is recorded in $RS$. Since no read is produced, Lemma~\ref{lem:snapshot-legal}
+  below holds trivially for the empty (or partial) read set, so the opacity
+  argument still goes through.
 \end{remark}
 
 \begin{lemma}[Snapshot Legality]
