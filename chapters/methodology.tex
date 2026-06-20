@@ -2,9 +2,9 @@
 \label{ch:formal-model}
 
 This chapter formalises the STM system and proves that every history it
-produces satisfies opacity~\cite{guerraoui2007}. Readers primarily interested
-in the implementation may skip ahead to Chapter~\ref{ch:implementation} and
-return here for the correctness argument.
+produces satisfies opacity~\cite{guerraoui2007}. Readers mainly interested in
+the implementation can skip ahead to Chapter~\ref{ch:implementation} and come
+back here for the correctness argument.
 
 \section{Preliminaries}
 
@@ -120,8 +120,8 @@ with an incremented $id$, subject to retry limits.
 \label{sec:commit-protocol}
 
 The validation-then-write structure below follows Transactional Locking
-II~\cite{dice2006transactional}, adapted here to the write-point history model
-of Section~\ref{ch:formal-model} rather than a single global version per
+II~\cite{dice2006transactional}, here adapted to the write-point history model
+of Section~\ref{ch:formal-model} instead of a single global version per
 reference.
 
 A transaction $T$ with a non-empty write-set ($\operatorname{dom}(WS) \neq
@@ -158,12 +158,13 @@ lock entirely, as their consistency is guaranteed by versioned reads.
 \section{Opacity}
 \label{sec:safety-opacity}
 
-Opacity~\cite{guerraoui2007} is the correctness criterion we target: every
+Opacity~\cite{guerraoui2007} is the correctness criterion targeted here: every
 transaction, including aborted ones, must always observe a consistent state of
-memory. This is stronger than database serializability, which only requires
-committed transactions to be consistent; opacity extends the guarantee to every
-transaction that ever executes, regardless of outcome. The subsections below
-build up the machinery needed for the proof and then establish it formally.
+memory. That is a stronger requirement than database serializability, which
+only asks committed transactions to be consistent; opacity extends the
+guarantee to every transaction that ever executes, regardless of how it ends.
+The subsections below build up the machinery the proof needs and then
+establish the result formally.
 
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}
@@ -209,10 +210,10 @@ some total order on the transactions.
 \subsection{History Completion}
 \label{subsec:completion}
 
-Live transactions complicate the opacity argument because they have not yet
-produced a final outcome. To reason about histories that contain them, we
-define a \emph{completion} of $H$ as a history $H'$ obtained by forcing every
-live transaction to a terminal status:
+Live transactions complicate the opacity argument, since they have not yet
+produced a final outcome. To reason about histories that contain them, a
+\emph{completion} of $H$ is defined as a history $H'$ obtained by forcing
+every live transaction to a terminal status:
 
 \begin{itemize}
   \item Every live transaction that is \emph{not} commit-pending is appended
@@ -250,12 +251,12 @@ element contains no live transactions by construction.
   \end{enumerate}
 \end{definition}
 
-Condition~2 is the distinguishing feature of opacity: legality is demanded of
-every transaction that appears in $S$, not just the committed ones. A system
-that only guarantees condition~2 for committed transactions satisfies
-serializability but not opacity, and could expose an aborted transaction to an
-inconsistent intermediate state — something that must not happen in an STM
-where aborted transactions may have already acted on what they read.
+Condition~2 is what distinguishes opacity from weaker criteria: legality is
+demanded of every transaction that appears in $S$, not just the committed
+ones. A system that only guarantees condition~2 for committed transactions
+satisfies serializability but not opacity, and could expose an aborted
+transaction to an inconsistent intermediate state. That must not happen in an
+STM where aborted transactions may already have acted on what they read.
 
 \subsection{Proof of Opacity}
 \label{subsec:opacity-proof}
@@ -298,8 +299,8 @@ where aborted transactions may have already acted on what they read.
 \end{theorem}
 
 \begin{proof}
-  We construct explicitly a completion $H'$ and a sequential history $S$, then
-  verify the two conditions of Definition~\ref{def:opacity}.
+  The proof constructs a completion $H'$ and a sequential history $S$
+  explicitly, then verifies the two conditions of Definition~\ref{def:opacity}.
 
   \paragraph{Step 1: Completion.}
   Construct $H'$ from $H$ as follows:
@@ -315,7 +316,7 @@ where aborted transactions may have already acted on what they read.
   Order committed transactions in $S$ by write point: $T_i$ precedes $T_j$
   iff $w_c(T_i) < w_c(T_j)$. This order is strict and total because write
   points are allocated atomically under the global commit lock
-  (Figure~\ref{fig:wc-ordering}). Place each aborted transaction at the
+  (Figure~\ref{fig:wc-ordering}). Each aborted transaction goes at the
   position given by Lemma~\ref{lem:snapshot-legal}: immediately after the
   committed transaction with the greatest $w_c \leq w_r(T)$ if one exists, or
   first in $S$ otherwise (Figure~\ref{fig:aborted-placement}). Multiple
