@@ -3,14 +3,13 @@
 \section{Background}
 \label{sec:intro}
 
-In sequential programs, state updates happen in a well-defined order, and
-each operation sees a consistent state left behind by its predecessor.
+In sequential programs, state updates follow a causal order, and
+each operation sees a consistent state left by its predecessor.
 Concurrent programs break that assumption. Operations interleave, and what
 any given operation will actually observe next becomes much harder to
 predict.
 
-Take a simple example: two threads concurrently incrementing a shared
-counter.
+Consider two threads concurrently incrementing a version counter.
 
 \begin{table}[ht]
   \centering
@@ -18,7 +17,7 @@ counter.
     \toprule
     \textbf{Thread 1} & \textbf{Thread 2} \\
     \midrule
-    \texttt{ctr++}    & \texttt{ctr++}    \\
+    \texttt{ver++}    & \texttt{ver++}    \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -33,9 +32,9 @@ from memory, increment it, write it back.
     \toprule
     \textbf{Thread 1}        & \textbf{Thread 2}        \\
     \midrule
-    $r_1 \gets \mathit{ctr}$ & $r_2 \gets \mathit{ctr}$ \\
+    $r_1 \gets \mathit{ver}$ & $r_2 \gets \mathit{ver}$ \\
     $r_1 \gets r_1 + 1$      & $r_2 \gets r_2 + 1$      \\
-    $\mathit{ctr} \gets r_1$ & $\mathit{ctr} \gets r_2$ \\
+    $\mathit{ver} \gets r_1$ & $\mathit{ver} \gets r_2$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -46,8 +45,8 @@ those are \emph{serializable}.
 
 So correctness in a concurrent system comes down to controlling how shared
 state gets accessed and modified. The classical answer is mutual exclusion:
-make sure only one thread can be inside a critical section at a time. Locks
-and monitors are the usual tools for enforcing that.
+ensuring that at any given moment, only one thread executes a protected region.
+Locks and monitors are the usual tools for enforcing that.
 
 They do provide thread safety, but using them correctly in practice is a
 different problem entirely. Locks have to be acquired and released by hand,
@@ -57,12 +56,12 @@ before it's released can leave that lock held forever, and with it, the
 whole system eventually deadlocked.
 
 Lomet~\cite{lomet1977} suggested a different way of framing the problem:
-instead of managing synchronisation by hand, let programmers simply declare
-that a block of code has to execute atomically and delegate the mechanism to the system.
-Software Transactional Memory~(STM) is a realization of that idea.
+instead of managing synchronization by hand, let programmers simply declare
+that a given code has to execute atomically and delegate the mechanism to the system.
+Software Transactional Memory is one realization of that idea, and unlike lock-based
+approaches, it also brings \emph{composability}.
 
-STM also brings \emph{composability}, which lock-based approaches handle
-badly. Take a bank transfer: a withdrawal from one account, then a deposit
+Take a bank transfer: a withdrawal from one account, then a deposit
 into another. Each step can be made atomic on its own, but combining them
 doesn't automatically make the pair atomic. Another thread can
 still observe the gap between the two operations, observing money that has
@@ -101,13 +100,10 @@ Section~\ref{ch:implementation}.
 
 Clojure ships with its own STM, built around \texttt{dosync} and
 transactional references (\texttt{ref}s). It's well-designed and widely
-used, but it comes with a documented limitation that the official
-documentation states plainly:
-
-\begin{quote}
-  I/O and other activities with side-effects should be avoided in
-  transactions, since transactions will be retried~\cite{clojureRefs}.
-\end{quote}
+used, but it comes with a limitation that the official
+documentation states plainly: \textit{``I/O and other activities with
+  side-effects should be avoided in transactions''}~\cite{clojureRefs},
+since a transaction body may be retried.
 
 The reason isn't complicated: a transaction body can re-execute on conflict,
 so any side-effect within it fires again on every retry, not just once when it
@@ -120,22 +116,21 @@ on state changes run into the same problem.
 
 Extending Clojure's existing STM directly would be the obvious fix, except
 the implementation lives in \texttt{LockingTransaction.java} inside the
-\texttt{clojure.lang} package, and the methods that would need extending,
-\texttt{doGet}, \texttt{doSet}, and \texttt{run}, are package-private. They
+\texttt{clojure.lang} package, and the methods that would need extending —
+\texttt{doGet}, \texttt{doSet}, and \texttt{run} — are package-private. They
 can't be overridden or wrapped from outside that package. Jensen and
 Thomsen~\cite{jensen2016} got around this by forking the Clojure runtime
-itself and modifying \texttt{LockingTransaction} directly. It works, but it
-ties the solution to one specific Clojure release and introduces an ongoing
-maintenance burden.
+itself and modifying \texttt{LockingTransaction} directly.
+It works, but the fix is now permanently tied to that one Clojure release.
 
-This thesis goes a different way. Rather than touching the runtime, the STM
-system here is implemented entirely at the language level in Clojure. The
-core algorithm is a variation of TL2~\cite{dice2006transactional}, extended
+This thesis takes a different approach instead: rather than touching the runtime,
+the STM system here is implemented entirely at the language level in Clojure.
+The core algorithm is a variation of TL2~\cite{dice2006transactional}, extended
 with MVCC and a transactional event system that exposes commit and rollback
 hooks as first-class API. The result is decoupled from any particular
 Clojure version, with no runtime changes required.
 
-Table~\ref{tab:public-api} summarises the full public API. Transactional
+Table~\ref{tab:public-api} summarizes the full public API. Transactional
 operations live in the \texttt{opusdb.atomic.stm} namespace; the hook
 mechanism is in \texttt{opusdb.atomic.tx-hooks}.
 

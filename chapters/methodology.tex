@@ -1,7 +1,7 @@
 \chapter{Formal Model}
 \label{ch:formal-model}
 
-This chapter formalises the STM system and proves that every history it
+This chapter formalizes the STM system and proves that every history it
 produces satisfies opacity~\cite{guerraoui2007}. Readers mainly interested in
 the implementation can skip ahead to Chapter~\ref{ch:implementation} and come
 back here for the correctness argument.
@@ -159,8 +159,8 @@ lock entirely, as their consistency is guaranteed by versioned reads.
 \label{sec:safety-opacity}
 
 Opacity~\cite{guerraoui2007} is the correctness criterion targeted here: every
-transaction, including aborted ones, must always observe a consistent state of
-memory. That is a stronger requirement than database serializability, which
+transaction, including aborted ones, must observe a valid memory state.
+That is a stronger requirement than database serializability, which
 only asks committed transactions to be consistent; opacity extends the
 guarantee to every transaction that ever executes, regardless of how it ends.
 The subsections below build up the machinery the proof needs and then
@@ -201,8 +201,8 @@ only source of a value for $\text{deref}(r)$ inside transaction $T$ is:
 \[
   \text{deref}_{\mathrm{seq}}(r) \;=\; \mathit{snap}(r,\, w_r)
 \]
-Because the execution is sequential, $\mathit{snap}(r, w_r)$ returns the value
-written by the most recent preceding committed transaction in the total order.
+Because the execution is sequential, $\mathit{snap}(r, w_r)$ resolves to the
+value committed at the latest write point $w' \leq w_r$ in the total order.
 A history is \emph{legal} if every read performed by every transaction (whether
 committed or aborted) is consistent with $\text{deref}_{\mathrm{seq}}$ under
 some total order on the transactions.
@@ -216,11 +216,11 @@ produced a final outcome. To reason about histories that contain them, a
 every live transaction to a terminal status:
 
 \begin{itemize}
-  \item Every live transaction that is \emph{not} commit-pending is appended
+  \item Every live transaction that is \emph{not} commit-pending is resolved
         with an $\textsc{Abort}$ outcome in $H'$.
-  \item Every live transaction that \emph{is} commit-pending may be appended
-        with either $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$, since its
-        outcome depends on whether validation succeeds.
+  \item Every live transaction that \emph{is} commit-pending receives either
+        $\textsc{Ok}$ or $\textsc{Abort}$ in $H'$, depending on whether
+        validation succeeds.
 \end{itemize}
 
 $\operatorname{Complete}(H)$ denotes the set of all such completions; every
@@ -229,7 +229,7 @@ element contains no live transactions by construction.
 \subsection{Formal Definitions}
 \label{subsec:opacity-defs}
 
-\begin{definition}[Real-Time Order]
+\begin{definition}[Real-Time Order~{\cite{guerraoui2007}}]
   \label{def:rt-order}
   Given a history $H$, the \emph{real-time order} $\prec_H$ is the strict
   partial order on transactions in $H$ such that $T_i \prec_H T_j$ whenever
@@ -305,11 +305,11 @@ STM where aborted transactions may already have acted on what they read.
   \paragraph{Step 1: Completion.}
   Construct $H'$ from $H$ as follows:
   \begin{itemize}
-    \item every live transaction that is not commit-pending is appended with
+    \item every live transaction that is not commit-pending is resolved with
           $\textsc{Abort}$;
     \item for each commit-pending transaction $T$, if $\text{valid}(T)$ holds
-          append $\textsc{Ok}$ and assign the next available write point,
-          otherwise append $\textsc{Abort}$.
+          assign the next write point and resolve with $\textsc{Ok}$,
+          otherwise resolve with $\textsc{Abort}$.
   \end{itemize}
 
   \paragraph{Step 2: Sequential history.}

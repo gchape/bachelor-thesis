@@ -38,7 +38,7 @@ Two measurement methods were used:
 
 \section{Throughput and Scalability}
 
-Table~\ref{tab:throughput-summary} summarises throughput across all scenarios
+Table~\ref{tab:throughput-summary} summarizes throughput across all scenarios
 and thread counts.
 
 \begin{table}[H]
@@ -74,8 +74,8 @@ transactions conflicts, with at most one able to commit at a time. Throughput st
 138,633\,TPS at 4 threads, 253,421\,TPS at 6 ($1.83\times$), 425,973\,TPS at
 12 ($3.07\times$).
 
-The real story is in the abort column, not the throughput numbers. Zero
-commit-phase aborts at every thread count. The ownership protocol catches
+What matters more here than the raw throughput numbers is the abort column.
+Zero commit-phase aborts at every thread count. The ownership protocol catches
 conflicts at write time, before a transaction ever gets near the commit
 lock, so what would otherwise be an expensive failed commit becomes a cheap
 speculative-phase abort instead. That's the entire reason this scenario
@@ -114,11 +114,11 @@ thread's data. No conflicts are possible by construction, so every
 transaction commits on its first try, which makes this the cleanest way to
 isolate the commit path's own overhead.
 
-The numbers don't go the direction one would expect. Throughput is
-1,322,570\,TPS at 4 threads, then it falls: 1,092,815\,TPS at 6,
-1,033,984\,TPS at 12. A workload with zero data conflicts ought to scale
-without friction. It doesn't, because conflict-freedom only removes one
-source of serialisation. Every write transaction, regardless of whether it
+Counterintuitively, throughput falls rather than rises as threads are added:
+1,322,570\,TPS at 4 threads, dropping to 1,092,815\,TPS at 6 and
+1,033,984\,TPS at 12. A workload with zero data conflicts has to scale.
+It doesn't, because conflict-freedom only removes one
+source of serialization. Every write transaction, regardless of whether it
 conflicts with anything, still has to pass through the same global commit
 lock to apply its write. Add more threads and all that changes is the length
 of the queue waiting at that lock. There's no extra parallelism to gain,
@@ -201,8 +201,9 @@ often a transaction writes versus reads.
 \paragraph{Read-Heavy (10\% writes).}
 1,969,463\,TPS at 12 threads. That's the number that matters in this whole
 benchmark suite, a $3.69\times$ gain over the 533,885\,TPS measured at 4
-threads and the only scenario in the entire suite to exceed the physical
-core count. The workload itself is simple: each transaction either writes
+threads and the only scenario in the entire suite where throughput keeps
+improving past the physical core count rather than plateauing or declining.
+The workload itself is simple: each transaction either writes
 one randomly chosen reference (10\% of the time) or reads and sums all ten
 (the other 90\%), and those read-only transactions never touch the commit
 lock at all, pulling a consistent snapshot straight out of the version
@@ -458,15 +459,16 @@ sessions and isn't meaningful on its own.
 
 \subsection{Architectural Strengths}
 
-Two properties of the design hold up particularly well under load.
+The MVCC read path and the on-commit callback mechanism are the two design
+choices that hold up best under load.
 
-The more significant one is the MVCC read path. Read-only transactions never
-go near the commit lock, so they scale independently of however many writers
-happen to be active. The read-heavy scenario shows this most clearly:
+The more significant of the two is the MVCC read path. Read-only transactions
+never go near the commit lock, so they scale independently of however many
+writers happen to be active. The read-heavy scenario shows this most clearly:
 throughput reaches 1,969,463\,TPS at 12 threads, a $3.69\times$ gain over 4
 threads, and nothing else in the suite comes close at high thread counts.
 Every other scenario eventually queues at the commit lock and stalls or
-declines from there.
+declines.
 
 The \texttt{on-commit} callback mechanism is the other result worth
 flagging. A hook costs 0.22\,$\mu$s per commit, about 14\% of the
@@ -518,10 +520,10 @@ grows by $3.6\times$, from 1.54\,B to 5.55\,B ticks. That super-linear
 growth is what a saturated lock looks like: each additional thread doesn't
 just wait itself, it adds to everyone else's wait too.
 
-The maximum wait per event, meanwhile, stays close to flat: 163--186\,M
-ticks regardless of thread count. Individual commits aren't getting any
-slower; threads are simply standing in a longer line before their turn
-comes. That distinction is what points toward the fix: since the
+The maximum wait per event, by contrast, stays close to flat at: 163--186\,M
+ticks regardless of thread count — individual commits aren't slowing down at all;
+what's growing is the length of the queue ahead of each thread's turn.
+That distinction is what points toward the fix: since the
 per-commit work inside the lock itself is unchanged, swapping the single
 global lock for per-stripe commit locks would let transactions on different
 stripes commit in parallel, recovering the lost throughput without touching

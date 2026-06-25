@@ -15,9 +15,9 @@ Neither is used here. Ownership acquisition at write time instead goes
 through a dedicated \texttt{java.lang.Object} monitor per reference, while
 commit serialization is handled separately, by a single global commit lock.
 
-TL2 discovers write conflicts at commit time; here they're caught earlier,
-\emph{eagerly}, at the point of write, via \texttt{try-acquire!}, so a
-losing transaction aborts on the spot rather than wasting work on a
+Whereas TL2 discovers write conflicts at commit time, this implementation
+catches them earlier — \emph{eagerly}, at the point of write, via \texttt{try-acquire!} — so a
+losing transaction aborts right away rather than wasting work on a
 transaction it's about to abort anyway.
 
 TL2 also keeps only the most recently committed value of each reference.
