@@ -68,18 +68,20 @@ after some state has already changed, those writes stay visible to every
 other thread unless the programmer remembers to undo them, which is
 easy to get wrong and easy to forget entirely.
 
-Lomet~\cite{lomet1977} had a different idea: instead of managing
-synchronization explicitly, let a programmer simply declare that a block of
-code must run atomically, and leave the mechanism to the system. Transactional
-memory is what came out of that idea.
+Lomet~\cite{lomet1977} had a different idea altogether: instead of
+relying on programmers to ensure synchronized access to shared memory,
+a programmer could simply declare that a block of code had to execute
+atomically and leave the details to the system.
+This is how transactional memory came to be.
 
 \subsection{Hardware Transactional Memory}
 
-Herlihy and Moss~\cite{herlihy1993} introduced Transactional Memory as a
-way to get atomic operations in hardware without explicit locking.
-A transaction, in their formulation, is \textit{``a finite sequence of
-  machine instructions satisfying serializability and atomicity''}~\cite{herlihy1993},
-exposed through five primitive instructions:
+Herlihy and Moss~\cite{herlihy1993} introduced the idea of Transactional
+Memory as a way to get atomic operations on processing units without
+explicit locking. The authors defined a transaction as
+\textit{``a finite sequence of machine instructions satisfying
+  serializability and atomicity''}~\cite{herlihy1993}. Such a transaction
+can be constructed through five primitive instructions:
 
 \begin{itemize}
   \item \textsc{Load-Transactional} (LT) loads a value from shared memory into
@@ -351,12 +353,11 @@ more detail.
 
 \section{Existing Clojure STM Design and Limitations}
 
-Clojure's STM is built around \texttt{dosync}: a macro that runs its body
-atomically and retries on conflict, with reads and writes to \texttt{Ref}s
-going through a small set of functions~\cite{clojureRefs}. The implementation
-itself lives in the \texttt{LockingTransaction} class.
-Table~\ref{tab:clojure-stm} lists the key internal fields of both
-\texttt{LockingTransaction} and \texttt{Ref}.
+Clojure's STM revolves around a \texttt{dosync} macro that ensures the body
+of code inside it is executed atomically, retrying in the case of
+conflicts~\cite{clojureRefs}. The implementation details of \texttt{dosync}
+live within the \texttt{LockingTransaction} class, whose fields are listed
+in Table~\ref{tab:clojure-stm}.
 
 \begin{table}[htbp]
   \centering
@@ -383,30 +384,28 @@ Table~\ref{tab:clojure-stm} lists the key internal fields of both
   \label{tab:clojure-stm}
 \end{table}
 
-A read inside a transaction calls \texttt{doGet}, which takes a read lock on
-the \texttt{Ref} and walks \texttt{tvals} backwards until it finds the latest
-committed value whose \texttt{point} does not exceed
-\texttt{readPoint}~\cite{jensen2016}. When no such value exists, a fault
-counter increments and the transaction retries, which is also what causes
-the \texttt{Ref}'s history to grow on the next attempt. Writes go through
-\texttt{doSet} instead: it locks the \texttt{Ref}, records it in
-\texttt{sets}, and buffers the new value in \texttt{vals}, leaving shared
-memory untouched until commit.
+When a value is read inside of a transaction, the code calls the
+\texttt{doGet} method on the \texttt{Ref}, taking a read lock on the
+\texttt{Ref} and searching backwards through the \texttt{tvals} field
+until it finds a value whose point does not exceed the readPoint of the
+transaction~\cite{jensen2016}. If no such value is found, a fault occurs
+and the transaction will be retried. Writes to a \texttt{Ref} use a
+\texttt{doSet} method instead, locking the \texttt{Ref}, writing to the
+sets field of the \texttt{LockingTransaction}, and writing to the vals
+field of the \texttt{Ref}'s transaction.
 
-Side-effects are where this design falls short. A transaction body can be
-re-executed an arbitrary number of times before it commits, so any
-side-effect inside it fires on every one of those attempts, not just on the
-final successful one. Clojure's own documentation says as much: I/O and
-notifications should stay out of transactions
-entirely~\cite{clojureRefs}.
+The problem with this system is that any side-effects that occur within
+the body of \texttt{dosync} will occur as many times as there were
+attempts to execute the \texttt{dosync} block; Clojure's documentation
+makes clear that I/O and notifications should not occur within
+\texttt{dosync} blocks~\cite{clojureRefs}.
 
-Jensen and Thomsen~\cite{jensen2016} worked around this by forking the
-Clojure runtime and adding \texttt{on-commit} and \texttt{after-commit} hooks
-straight into \texttt{LockingTransaction}. It works, but it ties the solution
-to one specific Clojure release and means maintaining a forked runtime.
-
-The system in this thesis avoids that coupling entirely: STM support is
-implemented at the language level, with the runtime left untouched.
-Section~\ref{subsec:opacity-proof} proves that the resulting system satisfies
-opacity~\cite{guerraoui2007}, so the correctness guarantee extends to every
-transaction, including aborted ones.
+Jensen and Thomsen~\cite{jensen2016} addressed this by forking the
+Clojure runtime to allow for on-commit and after-commit hooks to be
+called within the \texttt{LockingTransaction} class. The fix works, but
+it ties the solution to a single Clojure release and requires maintaining
+a forked runtime. The system described in this thesis
+avoids this coupling between the STM implementation and the runtime;
+STM support is provided at the language level instead. Furthermore,
+because the system is opaque~\cite{guerraoui2007}, the guarantees of STM
+are met for all transactions, even those that are aborted.

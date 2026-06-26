@@ -124,26 +124,22 @@ II~\cite{dice2006transactional}, here adapted to the write-point history model
 of Section~\ref{ch:formal-model} instead of a single global version per
 reference.
 
-A transaction $T$ with a non-empty write-set ($\operatorname{dom}(WS) \neq
-  \emptyset$) commits under a global commit lock. Upon entering the commit phase,
-the system checks $\sigma_T$. If $\sigma_T = \textsc{Aborted}$, the transaction
-is aborted and the commit is canceled.
+For any transaction $T$ with a non-empty write-set
+($\operatorname{dom}(WS) \neq \emptyset$), the transaction commits under a
+global commit lock. When the transaction enters the commit phase of its
+execution, the system examines the value of $\sigma_T$. If the value of
+$\sigma_T$ is \textsc{Aborted}, the transaction is aborted.
 
-If $T$ is still active, its read-set is validated against reference
-modifications by:
+Otherwise, the system validates the transaction's read-set $RS$ against the
+modifications to the system's references by ensuring that
 \[
-  \text{valid}(T) \;\triangleq\; \forall\, (r, e) \in RS :\;
-  \mathit{write\text{-}point}(r) = e.w
+  \forall\, (r, e) \in RS :\; \mathit{write\text{-}point}(r) = e.w
 \]
-That is, for every reference $r$ in the read-set, the current
-$\mathit{write\text{-}point}(r)$ must equal $e.w$, the write point recorded in
-$RS[r]$ at the time $r$ was read, confirming that no concurrent transaction has
-committed a new version of $r$ since $T$'s snapshot. If $\text{valid}(T)$ does
-not hold, the transaction is aborted.
-
-If validation succeeds, a new write point $w_c$ is allocated atomically by
-incrementing the global version clock. The transaction then applies its writes:
-for each $r \in \operatorname{dom}(WS)$,
+If this validation condition is not satisfied, the transaction is aborted.
+Otherwise, the system obtains a write point $w_c$ by atomically incrementing
+the global write clock. Finally, the transaction's writes are applied to the
+system's references according to the following steps: for each reference $r$
+in the write set of $T$, the system performs the following steps:
 \[
   \mathit{hist}(r) \gets \mathit{hist}(r) \cup \{(w_c,\, WS[r])\},
   \qquad
@@ -152,19 +148,18 @@ for each $r \in \operatorname{dom}(WS)$,
   \text{owner}(r) \gets \bot
 \]
 
-Read-only transactions ($\operatorname{dom}(WS) = \emptyset$) bypass the commit
-lock entirely, as their consistency is guaranteed by versioned reads.
+Read-only transactions (whose write-set is empty) do not contend for the
+commit lock.
 
 \section{Opacity}
 \label{sec:safety-opacity}
 
-Opacity~\cite{guerraoui2007} is the correctness criterion targeted here: every
-transaction, including aborted ones, must observe a valid memory state.
-That is a stronger requirement than database serializability, which
-only asks committed transactions to be consistent; opacity extends the
-guarantee to every transaction that ever executes, regardless of how it ends.
-The subsections below build up the machinery the proof needs and then
-establish the result formally.
+The requirement of opacity~\cite{guerraoui2007} for any transactional memory
+system is that every transaction that executes on the system (including
+those that are aborted) must observe a valid memory state. This requirement
+is more strict than serializability for databases, which only requires that
+committed database transactions are valid. The proof of opacity is provided
+in the subsections that follow.
 
 \subsection{Transaction Status and History Projections}
 \label{subsec:status}

@@ -51,15 +51,16 @@ Four constants tune the runtime behaviour:
   \item[\texttt{max-history} (32)] Maximum size of a version history per
         reference; older entries are discarded on commit.
   \item[\texttt{max-retries} (96)] Maximum retries before throwing
-        unconditionally. At roughly 2 seconds of cumulative delay, a
-        still-failing transaction is assumed to be in livelock.
+        unconditionally. After roughly 2 seconds of retries, a transaction
+        is assumed to be in livelock.
   \item[\texttt{base-sleep-ms} (1) and \texttt{max-sleep-ms} (32)] Bounds
-        of the exponential backoff delay applied after the fourth retry,
-        capped at 32\,ms to keep worst-case latency bounded.
+        of the sleep delay applied after the fourth retry when retried.
+        A maximum sleep delay of 32\,ms is applied to bound the transaction
+        latency.
 \end{description}
 
 The current transaction is bound to the thread-local variable \texttt{*tx*},
-with \texttt{nil} indicating no active transaction context.
+which is \texttt{nil} if there is no active transaction.
 
 \section{Reference and Version History}
 

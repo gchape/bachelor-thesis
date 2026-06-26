@@ -43,17 +43,17 @@ from memory, increment it, write it back.
 interleavings comes to $\displaystyle \binom{6}{3} = 20$, and only two of
 those are \emph{serializable}.
 
-So correctness in a concurrent system comes down to controlling how shared
-state gets accessed and modified. The classical answer is mutual exclusion:
-ensuring that at any given moment, only one thread executes a protected region.
-Locks and monitors are the usual tools for enforcing that.
+Correctness in concurrent systems is about controlling how shared state
+is accessed and modified by different threads. The classical approach is
+mutual exclusion: only one thread is allowed to execute within a
+protected region at any given time. Locks and monitors are the usual
+tools for enforcing this.
 
-They do provide thread safety, but using them correctly in practice is a
-different problem entirely. Locks have to be acquired and released by hand,
-and once exceptions get involved, keeping invariants preserved only gets
-harder as a system grows. An exception thrown after a lock is acquired but
-before it's released can leave that lock held forever, and with it, the
-whole system eventually deadlocked.
+While locks and monitors provide thread safety, using them correctly
+presents a separate challenge. Locks must be manually acquired and
+released, and if an exception is thrown between these two operations,
+the lock remains held indefinitely. As the system grows in complexity,
+maintaining these invariants becomes increasingly difficult.
 
 Lomet~\cite{lomet1977} suggested a different way of framing the problem:
 instead of managing synchronization by hand, let programmers simply declare
@@ -105,23 +105,25 @@ documentation states plainly: \textit{``I/O and other activities with
   side-effects should be avoided in transactions''}~\cite{clojureRefs},
 since a transaction body may be retried.
 
-The reason isn't complicated: a transaction body can re-execute on conflict,
-so any side-effect within it fires again on every retry, not just once when it
-finally commits.
+The reason for this behavior is simple: because the transaction body
+can re-execute itself in the case of a conflict, any side-effect within
+that transaction will also re-execute each time the transaction is
+retried. While this may be acceptable for certain applications, it is
+a limitation for others. For applications that require audit logging,
+only the commits that actually took effect should be recorded --- not
+every attempt made along the way. Systems that fire notifications in
+response to state changes run into the same problem.
 
-That's harmless for some applications, but a real constraint for others.
-Audit logging has to record exactly the commits that actually took effect,
-not every attempt along the way. Event-driven systems firing notifications
-on state changes run into the same problem.
-
-Extending Clojure's existing STM directly would be the obvious fix, except
-the implementation lives in \texttt{LockingTransaction.java} inside the
-\texttt{clojure.lang} package, and the methods that would need extending —
-\texttt{doGet}, \texttt{doSet}, and \texttt{run} — are package-private. They
-can't be overridden or wrapped from outside that package. Jensen and
-Thomsen~\cite{jensen2016} got around this by forking the Clojure runtime
-itself and modifying \texttt{LockingTransaction} directly.
-It works, but the fix is now permanently tied to that one Clojure release.
+Extending Clojure's STM implementation would be the most direct
+solution. Yet the implementation lives within
+\texttt{LockingTransaction.java} inside the \texttt{clojure.lang}
+package, and the methods that would need to be extended ---
+\texttt{doGet}, \texttt{doSet}, and \texttt{run} --- are all declared
+as package-private. They cannot be overridden or wrapped by code outside
+that package. Jensen and Thomsen~\cite{jensen2016} approached this
+problem by forking the Clojure runtime and modifying
+\texttt{LockingTransaction} directly. This approach works, but ties
+the solution to that specific Clojure release.
 
 This thesis takes a different approach instead: rather than touching the runtime,
 the STM system here is implemented entirely at the language level in Clojure.
