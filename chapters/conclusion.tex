@@ -9,7 +9,7 @@ a variant of the TL2 algorithm extended by MVCC and a transactional event system
 Any history produced by this implementation satisfies opacity~\cite{guerraoui2007},
 as proved in Section~\ref{sec:safety-opacity}. The benchmarks revealed the strengths
 and weaknesses of the design: read-only transactions do not require acquiring
-the commit lock, allowing the system to achieve 1.97M\,TPS at 12 threads. Write-heavy
+the commit lock, allowing the system to achieve 1{,}969{,}463\,TPS at 12 threads. Write-heavy
 transactions, however, experience a decline in throughput as the number of
 executing threads increases. Furthermore, the \texttt{on-commit}
 hook adds only 0.22\,$\mu$s per commit, approximately 14\% overhead over baseline.

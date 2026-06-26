@@ -13,7 +13,7 @@ The runtime was \textbf{OpenJDK 25.0.2} (64-bit Server VM) with
 \texttt{-Xms8g -Xmx8g} to prevent dynamic resizing during tests, and
 \texttt{-XX:+AlwaysPreTouch} was set to fault in heap pages at JVM startup
 rather than lazily.  A dedicated \texttt{:bench} profile was configured with
-direct linking enabled and the G1 garbage collector enabled.
+direct linking and the G1 garbage collector enabled.
 
 Thread counts of 4, 6, and 12 were chosen with care: 4 is less than the
 number of physical cores, 6 equals that number, and 12 saturates all
@@ -115,7 +115,7 @@ isolate the commit path's own overhead.
 
 Counterintuitively, throughput falls rather than rises as threads are added:
 1,322,570\,TPS at 4 threads, dropping to 1,092,815\,TPS at 6 and
-1,033,984\,TPS at 12. A workload with zero data conflicts has to scale.
+1,033,984\,TPS at 12. A workload with zero data conflicts ought to scale.
 It doesn't, because conflict-freedom only removes one
 source of serialization. Every write transaction, regardless of whether it
 conflicts with anything, still has to pass through the same global commit
@@ -321,7 +321,7 @@ and 12) and 50,000 transactions per thread.
 Trim aborts are zero across the table, irrespective of the history size
 or the thread count. This is because the bank transfer workload updates
 only 20 accounts --- each reference accumulates commits at a rate that
-does not push it out of the history window before a concurrent reader
+does not trim the history window before a concurrent reader
 can access it. If the workload targeted fewer references instead, trim
 aborts would appear for exactly this reason: a single reference would
 cycle through its entire history window before a reader gets a chance

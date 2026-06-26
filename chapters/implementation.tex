@@ -381,7 +381,7 @@ writes from one commit atomic with respect to readers:
 When a transaction aborts, \texttt{next-tx} dispatches its rollback hooks,
 removes it from \texttt{active-tx}, and hands back a fresh transaction with
 an incremented retry count. The first four retries carry no sleep penalty at
-at all, since short-lived conflicts that resolve quickly shouldn't have to pay for a
+all, since short-lived conflicts that resolve quickly shouldn't have to pay for a
 \texttt{Thread/sleep} call. Past the fourth retry, backoff kicks in, and if
 \texttt{max-retries} $= 96$ is ever reached the system throws unconditionally,
 on the assumption that this is most likely a livelock by that point.

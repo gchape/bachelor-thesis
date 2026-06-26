@@ -96,25 +96,19 @@ accordance with academic standards.
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-Clojure's built-in Software Transactional Memory (STM) provides no mechanism for
-coordinating side effects such as logging or sending notifications, since
-each retry will re-execute those side effects.
-To address this limitation, a new STM system has been designed and implemented from scratch.
-
-The proposed STM implements a variation of the TL2 algorithm with Multi-Version
-Concurrency Control (MVCC) through a bounded version history
-for each reference. Write conflicts are resolved eagerly at the point
-of write rather than at commit time. A transactional event system exposes
-on-commit and on-rollback hooks that defer side effects
-to well-defined lifecycle boundaries. Finally, it is proven that the system
-satisfies opacity, a stronger guarantee than serializability, meaning even
-aborted transactions never observe an inconsistent state of memory.
-
-On a six-core machine at twelve threads, the system achieves a
-throughput of 1,969,463 transactions per second. Throughput continues to
-scale even under maximum contention, where all transactions write to the
-same references. Furthermore, the \texttt{on-commit} hook adds $0.22\,\mu\text{s}$
-per commit, or approximately 14\% overhead over the baseline.
+Clojure's built-in STM does not coordinate side effects --- each retry
+of a transaction will re-execute them. To address this, a new STM system has been
+designed and implemented from scratch. The STM implements a variation of the TL2
+algorithm with MVCC using a bounded version history for each reference. Write
+conflicts are resolved at write rather than at commit. A transactional event system
+exposes \texttt{on-commit} and \texttt{on-rollback} hooks that allow side effects
+to be deferred to commit or rollback boundaries. The system satisfies opacity, a
+property stronger than serializability, which guarantees that even aborted
+transactions will never observe an inconsistent state. On a six-core machine with
+twelve threads, the system achieves a throughput of 1,969,463 transactions per second.
+Furthermore, the throughput continues to scale with maximum contention between
+transactions. The \texttt{on-commit} hook adds only $0.22\,\mu\text{s}$ per commit,
+which is around 14\% overhead over baseline measures.
 
 \bigskip
 \noindent\textbf{Keywords:} software transactional memory, MVCC, TL2, opacity, Clojure, transactional event hooks
