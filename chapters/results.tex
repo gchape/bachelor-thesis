@@ -281,13 +281,14 @@ confirming this).
 \section{Version History Size}
 \label{sec:history-sweep}
 
-The size of this
-history presents a trade-off: if it is too short, readers will encounter
-trim aborts when there is no valid snapshot in that historical window;
-if it is too long, each commit will allocate a larger vector, adding
-garbage collection pressure. The bank transfer workload was executed
-with history sizes of 8, 16, 32, 64, 128, and 256, with three different
-thread counts (4, 6, and 12) and 50,000 transactions per thread.
+Each reference maintains a bounded history of past committed values.
+The size of this history presents a trade-off: if it is too short, readers
+will encounter trim aborts when there is no valid snapshot in that
+historical window; if it is too long, each commit will allocate a larger
+vector, adding garbage collection pressure. The bank transfer workload
+was executed with history sizes of 8, 16, 32, 64, 128, and 256, with
+three different thread counts (4, 6, and 12) and 50,000 transactions
+per thread.
 
 \begin{table}[H]
   \centering

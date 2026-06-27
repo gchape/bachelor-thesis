@@ -110,7 +110,7 @@ to be deferred to commit or rollback boundaries. The system satisfies opacity, a
 property stronger than serializability, which guarantees that even aborted
 transactions will never observe an inconsistent state. On a six-core machine with
 twelve threads, the system achieves a throughput of 1,969,463 transactions per second.
-Furthermore, the throughput continues to scale with even under maximal write
+Furthermore, the throughput continues to scale even under maximal write
 contention on a single reference. The \texttt{on-commit} hook adds only $0.22\,\mu\text{s}$ per commit,
 which is around 14\% overhead over baseline measures.
 
