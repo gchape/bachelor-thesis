@@ -141,31 +141,35 @@ mechanism is in \texttt{opusdb.atomic.tx-hooks}.
   \renewcommand{\arraystretch}{1.4}
   \begin{tabularx}{\textwidth}{@{} l l X @{}}
     \toprule
-    \textbf{Function / Macro} & \textbf{Namespace}                                                     & \textbf{Description} \\
+    \textbf{Function / Macro} & \textbf{Namespace}                                                       & \textbf{Description} \\
     \midrule
     \texttt{(ref \textit{initial-val})}
                               & \texttt{stm}
-                              & Creates a new transactional reference with the given initial value.                           \\
+                              & Creates a new transactional reference with the given initial value.                             \\
     \texttt{(deref \textit{r})}
                               & \texttt{stm}
                               & Reads reference \textit{r} within the current transaction, or directly
-    if called outside of one.                                                                                                 \\
+    if called outside of one.                                                                                                   \\
     \texttt{(ref-set \textit{r} \textit{v})}
                               & \texttt{stm}
                               & Buffers a write of value \textit{v} to reference \textit{r};
-    must be called inside \texttt{dosync}.                                                                                    \\
+    must be called inside \texttt{dosync}.                                                                                      \\
+    \texttt{(alter \textit{r} \textit{f} \&\ \textit{args})}
+                              & \texttt{stm}
+                              & Applies \textit{f} to the current value of \textit{r} and \textit{args},
+    buffering the result as a write; must be called inside \texttt{dosync}.                                                     \\
     \texttt{(dosync \&\ \textit{body})}
                               & \texttt{stm}
                               & Executes \textit{body} atomically. Retries on conflict; composes with
-    enclosing transactions via flat nesting.                                                                                  \\
+    enclosing transactions via flat nesting.                                                                                    \\
     \texttt{(on-commit \textit{handler})}
                               & \texttt{tx-hooks}
                               & Registers \textit{handler} to be called exactly once after the
-    enclosing transaction commits.                                                                                            \\
+    enclosing transaction commits.                                                                                              \\
     \texttt{(on-rollback \textit{handler})}
                               & \texttt{tx-hooks}
                               & Registers \textit{handler} to be called on each abort of the
-    enclosing transaction, before retry.                                                                                      \\
+    enclosing transaction, before retry.                                                                                        \\                                                         \\
     \bottomrule
   \end{tabularx}
   \caption{Public API of the proposed STM system.}

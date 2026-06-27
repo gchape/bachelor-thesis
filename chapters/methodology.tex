@@ -138,8 +138,7 @@ modifications to the system's references by ensuring that
 If this validation condition is not satisfied, the transaction is aborted.
 Otherwise, the system obtains a write point $w_c$ by atomically incrementing
 the global write clock. Finally, the transaction's writes are applied to the
-system's references according to the following steps: for each reference $r$
-in the write set of $T$, the system performs the following steps:
+system's references according to the following steps:
 \[
   \mathit{hist}(r) \gets \mathit{hist}(r) \cup \{(w_c,\, WS[r])\},
   \qquad

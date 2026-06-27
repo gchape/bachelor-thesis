@@ -43,8 +43,8 @@ and thread counts.
 \begin{table}[H]
   \centering
   \caption{Throughput summary across all scenarios and thread counts.
-    Aborts/commit is reported only for scenarios where conflicts were
-    observed.}
+    Aborts/commit is reported only for scenarios instrumented with abort
+    counting.}
   \label{tab:throughput-summary}
   \begin{tabular}{@{}l r r r r r@{}}
     \toprule
@@ -60,7 +60,7 @@ and thread counts.
     Low Contention        & 1,322,570 & 1,092,815 & 1,033,984 & $0.78\times$          & ---                \\
     Bank Transfer         & 213,631   & 163,402   & 173,725   & $0.81\times$          & ---                \\
     Read-Heavy (10\% w.)  & 533,885   & 1,082,057 & 1,969,463 & $3.69\times$          & ---                \\
-    Write-Heavy (90\% w.) & 637,709   & 418,108   & 257,574   & $0.40\times$          & 0.00 / 0.00 / 0.00 \\
+    Write-Heavy (90\% w.) & 637,709   & 418,108   & 257,574   & $0.40\times$          & 0.18 / 0.22 / 0.27 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -74,8 +74,8 @@ transactions conflicts, with at most one able to commit at a time. Throughput st
 12 ($3.07\times$).
 
 What matters more here than the raw throughput numbers is the abort column.
-Zero commit-phase aborts at every thread count. The ownership protocol catches
-conflicts at write time, before a transaction ever gets near the commit
+Aborts per commit round to zero at every thread count. The ownership protocol
+catches conflicts at write time, before a transaction ever gets near the commit
 lock, so what would otherwise be an expensive failed commit becomes a cheap
 speculative-phase abort instead. That's the entire reason this scenario
 scales at all despite every pair of transactions colliding by construction.
@@ -101,8 +101,8 @@ scales at all despite every pair of transactions colliding by construction.
     \end{axis}
   \end{tikzpicture}
   \caption{Throughput under maximal conflict. All threads write the same
-    reference. Throughput scales from 139K to 426K\,TPS with zero commit-phase
-    aborts at every thread count.}
+    reference. Throughput scales from 139K to 426K\,TPS with negligible
+    abort rates at every thread count.}
   \label{fig:throughput-high-contention}
 \end{figure}
 
@@ -212,10 +212,11 @@ because the majority of transactions bypass the commit path entirely.
 \paragraph{Write-Heavy (90\% writes).}
 Invert the ratio and the curve inverts too: 637,709\,TPS at 4 threads,
 at 6 threads drops to 418,108\,TPS ($0.66\times$), and at 12 threads
-only reaches 257,574\,TPS ($0.40\times$). The abort count is zero
-throughout, so it's not about retrying failed transactions --- instead,
-it's about threads queuing to obtain the commit lock, as shown in the
-JFR data in Section~\ref{sec:bottlenecks}.
+only reaches 257,574\,TPS ($0.40\times$). Conflict aborts are present
+throughout (0.18--0.27 per commit), and increase with thread count.
+Nevertheless, the decreasing throughput is primarily due to commit lock
+queuing, not conflict aborts (see Section~\ref{sec:bottlenecks} for
+JFR data confirming this).
 
 \begin{figure}[H]
   \centering
@@ -263,9 +264,9 @@ JFR data in Section~\ref{sec:bottlenecks}.
         };
     \end{axis}
   \end{tikzpicture}
-  \caption{Throughput when 90\% of transactions write. The monotonically
-    decreasing throughput with zero abort rates indicates that the commit
-    lock is the main bottleneck in the system.}
+  \caption{Throughput when 90\% of transactions write. Despite the
+    low abort rate, the decreasing throughput indicates that the
+    commit lock is the main bottleneck in the system.}
   \label{fig:throughput-write-heavy}
 \end{figure}
 
@@ -324,8 +325,7 @@ only 20 accounts --- each reference accumulates commits at a rate that
 does not trim the history window before a concurrent reader
 can access it. If the workload targeted fewer references instead, trim
 aborts would appear for exactly this reason: a single reference would
-cycle through its entire history window before a reader gets a chance
-to see it.
+exhaust its entire history window before a reader gets a chance to see it.
 
 At 4 and 6 threads, throughput barely moves across the full range from 8 to
 256. The commit rate at these thread counts simply isn't high enough for
@@ -472,9 +472,9 @@ of the time it takes to execute the baseline algorithm in
 single-threaded mode. This low value indicates that the hook can be
 used in practice.
 
-The abort rate is also excellent: it is zero in all cases, including
-those with maximal conflict. This is due to the ownership protocol
-catching all conflicts at write time.
+The abort rate is also excellent: it is negligible in all instrumented
+scenarios, including those with maximal conflict. This is due to the
+ownership protocol catching all conflicts at write time.
 
 \subsection{Identified Bottleneck: the Commit Lock}
 \label{sec:bottlenecks}

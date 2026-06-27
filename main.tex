@@ -73,8 +73,8 @@
   \vspace{3.5cm}
   {\fontsize{12}{15}\selectfont
     Bachelor's Thesis Supervisor \\[6pt]
-    Zaal Beriashvili             \\[4pt]
-    Lecturer                     \\[14pt]}
+    Zaal Beriashvili-Lianov      \\[4pt]
+    Visiting Lecturer            \\[14pt]}
 
   \vfill
   {\fontsize{12}{15}\selectfont Kutaisi, 2026 \par}
@@ -91,7 +91,12 @@ or presented for defense by other authors, unless properly referenced or cited i
 accordance with academic standards.
 
 \vspace{1.5cm}
-\noindent Giorgi Chapidze \hfill \today
+\noindent Giorgi Chapidze \hfill June 27, 2026
+
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+I would like to thank Prof. Markus Neuhauser for reviewing Chapter~\ref{ch:formal-model}.
 
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
@@ -99,9 +104,8 @@ accordance with academic standards.
 Clojure's built-in STM does not coordinate side effects --- each retry
 of a transaction will re-execute them. To address this, a new STM system has been
 designed and implemented from scratch. The STM implements a variation of the TL2
-algorithm with MVCC using a bounded version history for each reference. Write
-conflicts are resolved at write rather than at commit. A transactional event system
-exposes \texttt{on-commit} and \texttt{on-rollback} hooks that allow side effects
+algorithm with MVCC using a bounded version history for each reference. A transactional
+event system exposes \texttt{on-commit} and \texttt{on-rollback} hooks that allow side effects
 to be deferred to commit or rollback boundaries. The system satisfies opacity, a
 property stronger than serializability, which guarantees that even aborted
 transactions will never observe an inconsistent state. On a six-core machine with
