@@ -1,56 +1,98 @@
 # Design and Evaluation of an MVCC-Based STM in Clojure
 
-Bachelor's thesis by **Giorgi Chapidze**, Kutaisi International University,
-School of Computer Science, 2026. Supervisor: Zaal Beriashvili-Lianov.
+**Bachelor's thesis · Giorgi Chapidze · Kutaisi International University · 2026**
 
-[Read the thesis (PDF)](docs/thesis.pdf) · [Download the STM source](stm-v1.zip) · [Browse the versioned snapshot](https://github.com/gchape/bachelor-thesis/tree/stm-v1)
+School of Computer Science · Supervisor: Zaal Beriashvili-Lianov
 
-The thesis presents a software transactional memory system implemented in Clojure,
-using a variation of Transactional Locking II (TL2) with multi-version concurrency
-control (MVCC). Commit and rollback hooks coordinate side effects with transaction
-outcomes. The thesis covers the design, formal model, implementation, and
-experimental evaluation.
+**[Read the thesis](docs/thesis.pdf)** · **[Download the implementation](stm-v1.zip)** · **[View the source snapshot tag](https://github.com/gchape/bachelor-thesis/tree/stm-v1)**
 
-## Repository contents
+## Overview
 
-| Path                      | Contents                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `docs/thesis.pdf`         | Compiled thesis                                                                 |
-| `main.tex`                | LaTeX entry point and front matter                                              |
-| `chapters/`               | Introduction, literature, formal model, implementation, results, and conclusion |
-| `references.bib`          | Bibliography                                                                    |
-| `stm-v1.zip`              | Archived Clojure implementation, tests, benchmarks, and JFR recordings          |
-| `RELEASE_NOTES.md`        | Source archive provenance and release information                               |
-| `scripts/build-thesis.sh` | PDF build script                                                                |
+Clojure's built-in software transactional memory (STM) can retry a transaction,
+causing side effects inside it to run more than once. This thesis investigates
+how an STM implemented entirely in Clojure can coordinate those effects with
+transaction outcomes, without modifying the language runtime.
 
-## STM source snapshot
+The implementation combines a variation of Transactional Locking II (TL2) with
+multi-version concurrency control (MVCC) and bounded version histories.
+Transaction hooks expose commit and rollback events. The thesis develops a
+formal model, examines opacity, explains the implementation, and evaluates
+throughput, contention, version history size, and latency.
 
-Extract `stm-v1.zip` to obtain the `stm-v1/` project. The snapshot preserves the
-original `opusdb.*` namespaces referenced in the thesis. Its original README,
-Leiningen project configuration, and license are included in the archive.
+## Read the thesis
 
-The snapshot is identified by the Git tag [`stm-v1`](https://github.com/gchape/bachelor-thesis/tree/stm-v1).
-Archive SHA-256: `39f95ea238e447785d1fed15ae153dd70849894261ccc95be8e8d1316a9d3098`.
+The [compiled PDF](docs/thesis.pdf) contains the complete 54-page thesis,
+including the bibliography. Its six chapters cover:
 
-## Build the PDF
+1. **Introduction** — motivation, side effects, and the public API.
+2. **Literature review** — concurrency, transactional memory, and Clojure's STM.
+3. **Formal model** — transactions, execution, the commit protocol, and opacity.
+4. **Implementation** — reference histories, transaction lifecycle, conflict resolution, and hooks.
+5. **Results and evaluation** — experimental setup, scalability, and latency.
+6. **Conclusion** — findings, limitations, and future work.
 
-Install a TeX Live distribution with pdfLaTeX, BibTeX, `latexmk`, and the packages
-used in `main.tex`, including `newtx`, `newtxtt`, `minted`, TikZ, and PGFPlots.
-The `minted` package also requires its syntax-highlighting helper (`latexminted`
-for minted 3, or Pygments for minted 2).
+## Explore the implementation
 
-From the repository root, run:
+The [`stm-v1.zip`](stm-v1.zip) archive contains the source snapshot accompanying
+the thesis: the STM, transaction hooks, tests, benchmark programs, results, and
+Java Flight Recorder recordings. It extracts into `stm-v1/`.
+
+The code retains its original `opusdb.*` namespaces so it matches the examples
+in the thesis. The archive also includes its original README and Leiningen
+configuration; references there to the former OpusDB repository are historical.
+Use this repository's snapshot to obtain the implementation.
+
+With a JDK and Leiningen installed, extract the archive and run the tests:
+
+```bash
+unzip stm-v1.zip
+cd stm-v1
+lein test
+```
+
+Leiningen downloads the dependencies declared in `project.clj`, including
+Clojure 1.12.4. Benchmark configuration and entry points are included in the
+archive's `project.clj` and `src/opusdb/benchmark/` directory.
+
+The snapshot is preserved by the [`stm-v1` tag](https://github.com/gchape/bachelor-thesis/tree/stm-v1).
+To check the archive's integrity:
+
+```bash
+sha256sum stm-v1.zip
+# 39f95ea238e447785d1fed15ae153dd70849894261ccc95be8e8d1316a9d3098  stm-v1.zip
+```
+
+## Build the thesis PDF
+
+Install TeX Live with pdfLaTeX, BibTeX, `latexmk`, and the packages used in
+[`main.tex`](main.tex). These include `newtx`, `newtxtt`, `multirow`, `minted`,
+TikZ, and PGFPlots, together with their font dependencies. Code highlighting
+requires `latexminted` for minted 3, or Pygments for minted 2.
+
+From the repository root:
 
 ```bash
 ./scripts/build-thesis.sh
 ```
 
-The script runs the LaTeX and bibliography passes, keeps intermediate files in
-`build/`, and copies the finished document to `docs/thesis.pdf`. Shell escape is
-enabled for code syntax highlighting.
+The script resolves the bibliography and cross-references, writes intermediate
+files to `build/`, and saves the finished PDF to [`docs/thesis.pdf`](docs/thesis.pdf).
+It enables shell escape for code highlighting. The checked-in PDF was built
+with TeX Live 2026.
+
+## Repository layout
+
+| Path                                                 | Contents                                          |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| [`docs/thesis.pdf`](docs/thesis.pdf)                 | Compiled thesis                                   |
+| [`main.tex`](main.tex)                               | LaTeX entry point and front matter                |
+| [`chapters/`](chapters/)                             | Six thesis chapters                               |
+| [`references.bib`](references.bib)                   | Bibliography                                      |
+| [`stm-v1.zip`](stm-v1.zip)                           | Implementation, tests, benchmarks, and recordings |
+| [`scripts/build-thesis.sh`](scripts/build-thesis.sh) | PDF build script                                  |
 
 ## License
 
 The thesis is licensed under [Creative Commons Attribution 4.0 International](license).
-The archived STM implementation has its own license in `stm-v1/LICENSE` inside
-`stm-v1.zip`.
+The implementation is distributed under its own license, included as
+`stm-v1/LICENSE` inside the source archive.
