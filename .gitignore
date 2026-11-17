@@ -21,3 +21,9 @@ _minted*/
 
 # VS Code
 .vscode/
+
+# LaTeX build directory
+/build/
+
+# Published thesis PDF
+!/docs/thesis.pdf
